@@ -8,12 +8,13 @@
 <link rel="preload" href="assets/fonts/tuneshare-glyphs.woff2" as="font" type="font/woff2" crossorigin>
 <script>try{var t=localStorage.getItem("theme")}catch(e){}document.documentElement.dataset.theme=t||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")</script>
 <link rel="stylesheet" href="styles.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M13 22a4 3 0 1 1-2-2.6V7h2l7 4-1 1.8-6-3.3z' fill='white'/%3E%3C/svg%3E">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 </head>
 <body>
 <div class="app">
   <header class="app-head">
-    <div class="brand"><span class="logo"><span class="mg">&#xECA7;</span></span><span class="brand-name">TuneShare</span></div>
+    <div class="brand"><span class="logo"><img src="assets/logo.svg" alt=""></span><span class="brand-name">TuneShare</span></div>
     <input id="title" class="title-field" maxlength="60" placeholder="Untitled tune" aria-label="Title" autocomplete="off" spellcheck="false">
     <div class="spacer"></div>
     <button class="icon-btn hide-sm" id="undo" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>

@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Write a short melody, play it, and share it as a link.",
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "icons": "node scripts/build-icons.mjs"
   }
 }

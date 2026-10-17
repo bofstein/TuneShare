@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" alt="TuneShare logo" height="96">
+
 # TuneShare
 Web app to create and share simple, short melodies through URLs.
 
@@ -25,7 +27,11 @@ Plain HTML, CSS and ES modules: no build step and no dependencies.
 ```sh
 python3 -m http.server     # then open http://localhost:8000
 npm test                   # unit tests
+npm run icons              # regenerate favicon.ico and the touch icon
 ```
+
+`assets/logo.svg` is the master logo. The favicon and touch icon are generated
+from it by `scripts/build-icons.mjs`; a test fails if they drift out of sync.
 
 See [DESIGN.md](DESIGN.md) for the design principles, the URL format, the
 code layout and the development guide.
