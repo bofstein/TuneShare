@@ -1,7 +1,7 @@
 // URL fragment codec, format v1: "1." + base64url(protobuf Tune message).
 // Schema: src/tune.proto. Spec: DESIGN.md, "URL format". Pure, no DOM.
 import { TIMES } from './theory.js';
-import { defaultTune, capacity, trimToCapacity } from './model.js';
+import { defaultTune, capacity, trimToCapacity, MAX_MEASURES } from './model.js';
 
 export const VERSION = 1;
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -151,7 +151,7 @@ export function decode(fragment) {
         else if (field === 3) tune.key = clamp((v >>> 1) ^ -(v & 1), -7, 7, 0);
         else if (field === 4) tune.clef = v === 1 ? 'bass' : 'treble';
         else if (field === 5) tune.time = TIMES[v] ?? (repaired = true, '4/4');
-        else if (field === 6) tune.measures = v === 0 ? 4 : clamp(v, 1, 12, 4);
+        else if (field === 6) tune.measures = v === 0 ? 4 : clamp(v, 1, MAX_MEASURES, 4);
       } else if (wire === 2) {
         const len = varint();
         const chunk = bytes.slice(i, i + len);

@@ -67,7 +67,7 @@ function warnFull() {
   if (t.measures < M.MAX_MEASURES) {
     toast({ kind: 'warn', title: 'Not enough room', body: `This would push notes past the end of bar ${t.measures}.`, action: 'Add measure', onAction: () => setMeasures(t.measures + 1) });
   } else {
-    toast({ kind: 'warn', title: 'The tune is full', body: 'All 12 measures are used. Delete or shorten a note first.' });
+    toast({ kind: 'warn', title: 'The tune is full', body: `All ${M.MAX_MEASURES} measures are used. Delete or shorten a note first.` });
   }
 }
 
@@ -658,7 +658,7 @@ $('staves2').onclick = () => { stopPlayback(); setStaves(2); };
 $('time').onchange = e => {
   stopPlayback();
   const r = M.setTime(store.tune, e.target.value);
-  if (r.error) { toast({ kind: 'warn', title: "The tune doesn't fit", body: `It needs more than 12 measures in ${e.target.value}.` }); sync(); return; }
+  if (r.error) { toast({ kind: 'warn', title: "The tune doesn't fit", body: `It needs more than ${M.MAX_MEASURES} measures in ${e.target.value}.` }); sync(); return; }
   applyWhole(r);
   if (r.expanded) toast({ title: `Expanded to ${r.expanded} measures to fit` });
 };
