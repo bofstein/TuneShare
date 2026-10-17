@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPieces, beamGroups, assignHeads, assignAccidentals, assignAccidentalColumns, assignSides, layout, G } from '../src/layout.js';
-import { tune } from './helpers.js';
+import * as M from '../src/model.js';
+import { parse, tune } from './helpers.js';
 
 test('half note on beat 4 splits into tied quarters', () => {
   const { pcs } = buildPieces(tune('C4:q C4:q C4:q D4:h'));
@@ -95,4 +96,21 @@ test('two staves share bar lines and line up notes that sound together', () => {
   assert.equal(lay.geo.locate(lay.geo.tx(0, 4), lay.geo.Y(0, 4, 0)).s, 0);
   const hit = lay.geo.hitEvent(headX(1, 0) + 5, lay.geo.Y(0, 3, 1));
   assert.deepEqual(hit && [hit.s, hit.ev], [1, 0]);
+});
+
+test('two staves each draw their own clef and notes, whichever staff is being edited (#19)', () => {
+  const t = { ...tune('E5:q D5:q C5:h'), staff2: { clef: 'bass', events: parse('C3:q G2:q C3:q') } };
+  const clefs = lay => lay.staff.filter(it => it.t === 'glyph' && [G.gClef, G.fClef].includes(it.g)).map(it => it.g);
+  const lay = layout(t, { width: 1000 });
+  assert.deepEqual(clefs(lay), [G.gClef, G.fClef]);
+  assert.deepEqual([...lay.events[0].keys()], [0, 1, 2]);
+  assert.deepEqual([...lay.events[1].keys()], [0, 1, 2]);
+  // Upper notes sit high on the treble staff, lower notes on the bass staff below it.
+  const headY = (s, i) => lay.events[s].get(i).find(it => it.t === 'glyph' && it.g === G.nhB).y;
+  assert.equal(headY(0, 0), lay.geo.Y(0, 7, 0));     // E5 = top space of the treble staff
+  assert.equal(headY(1, 0), lay.geo.Y(0, 3, 1));     // C3 = second space of the bass staff
+  // The editing view of the lower staff is a one-staff tune: drawing it never repeats that staff.
+  const view = M.staffView(t, 1);
+  assert.equal(view.staff2, undefined);
+  assert.deepEqual(clefs(layout(view, { width: 1000 })), [G.fClef]);
 });
