@@ -339,7 +339,7 @@ function paintOverlay() {
   const o = {};
   const hw = 1.18 * lay.sp;
   if (chordHover) {
-    o.ghost = { k: chordHover.k, s: chordHover.st, x: chordHover.x, pos: chordHover.pos, ticks: DUR_TICKS[inputDur] };
+    o.ghost = { k: chordHover.k, s: chordHover.st, x: chordHover.x, pos: chordHover.pos, ticks: DUR_TICKS[chordHover.dur] };
   } else if (hover) {
     const { slot, pos, tip, rest } = hover;
     o.marker = slot.free ? null : { k: slot.k, s: slot.st, x: slot.x };
@@ -520,7 +520,7 @@ function chordTargetAt(ev, x, y) {
     const view = M.staffView(store.tune, loc.s), c = CLEFS[view.clef];
     const d = clampDiatonic(view.clef, loc.pos + c.bottom), p = fromDiatonic(d);
     if (M.pitchesOf(e).some(q => diatonic(q) === d) || M.pitchesOf(e).length >= M.MAX_CHORD_NOTES) return null;
-    return { st: loc.s, ev: i, pitch: { ...p, alter: keyAlter(view.key, p.step) }, k: span.k, x: span.x, pos: d - c.bottom };
+    return { st: loc.s, ev: i, pitch: { ...p, alter: keyAlter(view.key, p.step) }, k: span.k, x: span.x, pos: d - c.bottom, dur: e.dur };
   }
   return null;
 }

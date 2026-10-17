@@ -48,7 +48,12 @@ export function renderOverlay(lay, o) {
     if (o.ghost.rest) s += `<text x="${f(x)}" y="${f(Y(k, 4))}" font-size="${fs}">${G.rQ}</text>`;
     else {
       s += `<text x="${f(x)}" y="${f(y)}" font-size="${fs}">${ticks >= 16 ? G.nhW : ticks >= 8 ? G.nhH : G.nhB}</text>`;
-      if (ticks < 16) s += `<line class="stem" x1="${f(sx)}" y1="${f(y)}" x2="${f(sx)}" y2="${f(up ? y - 3.5 * sp : y + 3.5 * sp)}"/>`;
+      if (ticks < 16) {
+        const tip = up ? y - 3.5 * sp : y + 3.5 * sp;
+        s += `<line class="stem" x1="${f(sx)}" y1="${f(y)}" x2="${f(sx)}" y2="${f(tip)}"/>`;
+        if (ticks <= 3) s += `<text x="${f(sx - 0.06 * sp)}" y="${f(tip)}" font-size="${fs}">${ticks === 1 ? (up ? G.f16u : G.f16d) : up ? G.f8u : G.f8d}</text>`;
+      }
+      if ([3, 6, 12].includes(ticks)) s += `<text x="${f(x + hw + 0.35 * sp)}" y="${f(pos % 2 === 0 ? y - sp / 2 : y)}" font-size="${fs}">${G.dot}</text>`;
     }
     out += `<g class="ghost">${s}</g>`;
     if (o.tip) {
