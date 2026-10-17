@@ -1,4 +1,4 @@
-// Web Audio synth voice and scheduler. See context/05-rendering-audio-architecture.md.
+// Web Audio synth voice and scheduler. See DESIGN.md.
 import { freqOf, midiOf, ticksOf } from './theory.js';
 import { used } from './model.js';
 

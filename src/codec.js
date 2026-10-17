@@ -1,5 +1,5 @@
 // URL fragment codec, format v1: "1." + base64url(protobuf Tune message).
-// Schema: src/tune.proto. Spec: context/03-url-format.md. Pure, no DOM.
+// Schema: src/tune.proto. Spec: DESIGN.md, "URL format". Pure, no DOM.
 import { TIMES } from './theory.js';
 import { defaultTune, capacity, trimToCapacity } from './model.js';
 

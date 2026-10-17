@@ -1,5 +1,5 @@
 // Tune → positioned drawing primitives + geometry for hit-testing. Pure, no DOM.
-// Rules: context/05-rendering-audio-architecture.md.
+// Rules: DESIGN.md, "Rendering and audio".
 import { BEAT_TICKS, CLEFS, TICKS_PER_MEASURE, keyAlter, spell, spellAligned, ticksOf } from './theory.js';
 
 export const G = {

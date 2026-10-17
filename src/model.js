@@ -1,5 +1,5 @@
 // Tune model and pure edit operations. Every op returns {tune} or {error}.
-// Rules: context/02-data-model.md (ripple editing, overflow trimming).
+// Rules: DESIGN.md, "Editing rules" (ripple editing, overflow trimming).
 import { TICKS_PER_MEASURE, TICKS_TO_DUR, spell, spellAligned, ticksOf } from './theory.js';
 
 export const MAX_MEASURES = 12;
