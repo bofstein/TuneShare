@@ -61,3 +61,28 @@ test('time signature change expands measures to fit', () => {
 test('swap reorders neighbours', () => {
   assert.deepEqual(M.swap(tune('C4:q D4:h'), 0, 1).tune.events, parse('D4:h C4:q'));
 });
+
+const P = (step, oct, alter = 0) => ({ step, oct, alter });
+
+test('addTone builds chords up to the cap and refuses duplicates', () => {
+  let t = tune('C4:q');
+  for (const step of [2, 4, 6]) t = M.addTone(t, 0, P(step, 4)).tune;
+  t = M.addTone(t, 0, P(1, 5)).tune;
+  assert.equal(M.pitchesOf(t.events[0]).length, M.MAX_CHORD_NOTES);
+  assert.equal(M.addTone(t, 0, P(5, 5)).error, 'chord-full');
+  assert.equal(M.addTone(tune('C4:q'), 0, P(0, 4, 1)).error, 'duplicate');
+  assert.equal(M.addTone(tune('r:q'), 0, P(0, 4)).error, 'not-a-note');
+});
+
+test('removeTone promotes the next tone, and removes the event when one pitch is left', () => {
+  let t = M.addTone(tune('C4:q D4:q'), 0, P(2, 4)).tune;
+  assert.deepEqual(M.removeTone(t, 0, 0).tune.events[0], { dur: 2, ...P(2, 4) });
+  assert.deepEqual(M.removeTone(M.removeTone(t, 0, 0).tune, 0, 0).tune.events, parse('D4:q'));
+});
+
+test('chords keep their tones through ripple edits and length changes', () => {
+  const t = M.addTone(tune('C4:q'), 0, P(2, 4)).tune;
+  const r = M.setDuration(M.insert(t, 0, n('G4:q')).tune, 1, 3).tune;
+  assert.deepEqual(r.events[1].tones, [P(2, 4)]);
+  assert.equal(r.events[1].dur, 3);
+});

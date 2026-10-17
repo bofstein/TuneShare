@@ -8,7 +8,7 @@ function item(it, fs) {
     case 'glyph': return `<text class="${it.cls}" x="${f(it.x)}" y="${f(it.y)}" font-size="${fs}">${it.g}</text>`;
     case 'line': return `<line class="${it.cls}" x1="${f(it.x1)}" y1="${f(it.y1)}" x2="${f(it.x2)}" y2="${f(it.y2)}"/>`;
     case 'rect': return `<rect class="${it.cls}" x="${f(it.x)}" y="${f(it.y)}" width="${f(it.w)}" height="${f(it.h)}"/>`;
-    case 'halo': return `<rect class="halo" x="${f(it.x)}" y="${f(it.y)}" width="${f(it.w)}" height="${f(it.h)}" rx="${f(it.h / 2)}"/>`;
+    case 'halo': return `<rect class="halo" data-tone="${it.tone}" x="${f(it.x)}" y="${f(it.y)}" width="${f(it.w)}" height="${f(it.h)}" rx="${f(it.h / 2)}"/>`;
     case 'poly': return `<polygon class="${it.cls}" points="${it.pts.map(([x, y]) => `${f(x)},${f(y)}`).join(' ')}"/>`;
     case 'path': return `<path class="${it.cls}" d="${it.d}"/>`;
     case 'text': return `<text class="${it.cls}" x="${f(it.x)}" y="${f(it.y)}">${it.text}</text>`;

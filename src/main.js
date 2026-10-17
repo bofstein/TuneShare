@@ -28,6 +28,12 @@ let drag = null;                // active pointer interaction
 const tune = () => store.tune;
 const selIndex = () => (store.cursor.type === 'note' ? store.cursor.index : -1);
 const selected = () => tune().events[selIndex()] || null;
+/** Which pitch of the selected chord is selected (0 = main pitch). */
+const selTone = () => {
+  const e = selected();
+  return e && !e.rest ? Math.min(store.cursor.tone || 0, M.pitchesOf(e).length - 1) : 0;
+};
+const selPitch = () => { const e = selected(); return e && !e.rest ? M.pitchesOf(e)[selTone()] : null; };
 const insertIndex = () => (store.cursor.type === 'note' ? store.cursor.index + 1 : store.cursor.index);
 const activeDur = () => (selected() ? selected().dur : inputDur);
 
@@ -60,11 +66,47 @@ function warnFull() {
 }
 
 // ---------- edits ----------
+const ERRORS = {
+  'chord-full': ['Chord is full', `Chords can have up to ${M.MAX_CHORD_NOTES} notes.`],
+  duplicate: ['Already in the chord', 'That line or space already has a note in this chord.'],
+};
 function apply(result, cursor, sound) {
-  if (result.error) { if (result.error === M.ERR_FULL) warnFull(); return false; }
+  if (result.error) {
+    if (result.error === M.ERR_FULL) warnFull();
+    else if (ERRORS[result.error]) toast({ kind: 'warn', title: ERRORS[result.error][0], body: ERRORS[result.error][1], ms: 4000 });
+    return false;
+  }
   store.commit(result.tune, cursor);
-  if (sound && previewOn && !sound.rest) preview(sound);
+  if (sound && previewOn && !sound.rest) preview(...M.pitchesOf(sound));
   return true;
+}
+
+/** Add a chord tone with letter `step` to the selected note, in the nearest octave above the selected pitch. */
+function addToneLetter(step) {
+  const sel = selected(), sp = selPitch();
+  if (!sel || sel.rest) { typeLetter(step); return; }
+  const c = CLEFS[tune().clef], ref = diatonic(sp);
+  let d = step + 7 * Math.ceil((ref + 1 - step) / 7);
+  if (d > c.max) d -= 7;
+  addTone({ ...fromDiatonic(d), alter: keyAlter(tune().key, step) });
+}
+
+function addTone(p) {
+  const i = selIndex();
+  apply(M.addTone(tune(), i, p), { type: 'note', index: i, tone: M.pitchesOf(selected()).length }, p);
+}
+
+function cycleTone(dir) {
+  const e = selected();
+  if (!e || e.rest) return;
+  const ps = M.pitchesOf(e);
+  if (ps.length < 2) return;
+  // Cycle in pitch order (bottom to top), not entry order.
+  const order = ps.map((p, t) => [diatonic(p), t]).sort((a, b) => a[0] - b[0]).map(([, t]) => t);
+  const k = order.indexOf(selTone());
+  const tone = order[(k + dir + order.length) % order.length];
+  store.setCursor({ ...store.cursor, tone });
+  if (previewOn && !player.playing) preview(ps[tone]);
 }
 
 function refDiatonic(index) {
@@ -118,20 +160,19 @@ function toggleDotted() {
 }
 
 function movePitch(steps) {
-  const sel = selected();
-  if (!sel || sel.rest) return;
-  const d = clampDiatonic(tune().clef, diatonic(sel) + steps);
-  const p = fromDiatonic(d);
-  const n = { ...sel, ...p, alter: Math.abs(steps) === 7 ? sel.alter : keyAlter(tune().key, p.step) };
-  apply(M.replace(tune(), selIndex(), n), null, n);
+  const cur = selPitch();
+  if (!cur) return;
+  const d = clampDiatonic(tune().clef, diatonic(cur) + steps);
+  const p = { ...fromDiatonic(d), alter: Math.abs(steps) === 7 ? cur.alter : keyAlter(tune().key, fromDiatonic(d).step) };
+  apply(M.setTonePitch(tune(), selIndex(), selTone(), p), null, p);
 }
 
 function setAlter(a) {
-  const sel = selected();
-  if (!sel || sel.rest) return;
-  const keyDefault = keyAlter(tune().key, sel.step);
-  const n = { ...sel, alter: sel.alter === a && a !== keyDefault ? keyDefault : a };
-  apply(M.replace(tune(), selIndex(), n), null, n);
+  const cur = selPitch();
+  if (!cur) return;
+  const keyDefault = keyAlter(tune().key, cur.step);
+  const p = { ...cur, alter: cur.alter === a && a !== keyDefault ? keyDefault : a };
+  apply(M.setTonePitch(tune(), selIndex(), selTone(), p), null, p);
 }
 
 function deleteSel() {
@@ -140,6 +181,12 @@ function deleteSel() {
     // Backspace at the caret deletes the event before it.
     const c = store.cursor.index;
     if (c > 0) apply(M.remove(tune(), c - 1), { type: 'caret', index: c - 1 });
+    return;
+  }
+  const e = tune().events[i];
+  if (!e.rest && M.pitchesOf(e).length > 1) {
+    // In a chord, delete just the selected tone; keep the chord selected.
+    apply(M.removeTone(tune(), i, selTone()), { type: 'note', index: i, tone: 0 });
     return;
   }
   apply(M.remove(tune(), i), i > 0 ? { type: 'note', index: i - 1 } : { type: 'caret', index: 0 });
@@ -164,10 +211,10 @@ function moveCursor(dir) {
   select(i);
 }
 
-function select(i) {
-  store.setCursor({ type: 'note', index: i });
+function select(i, tone = 0) {
+  store.setCursor({ type: 'note', index: i, tone });
   const e = tune().events[i];
-  if (e && !e.rest && previewOn && !player.playing) preview(e);
+  if (e && !e.rest && previewOn && !player.playing) preview(...M.pitchesOf(e));
 }
 
 function setMeasures(n) {
@@ -215,6 +262,7 @@ function paintClasses() {
     const i = +g.dataset.i;
     g.classList.toggle('sel', i === selIndex());
     g.classList.toggle('play', i === playing);
+    g.querySelectorAll('.halo').forEach(h => h.classList.toggle('on', i === selIndex() && +h.dataset.tone === selTone()));
   });
 }
 
@@ -273,11 +321,11 @@ function sync() {
   $('dot').classList.toggle('on', dur >= 5);
   $('dot').disabled = !canDot(dur) && dur < 5;
   $('rest').classList.toggle('on', !!(sel && sel.rest));
-  const isNote = !!(sel && !sel.rest);
+  const isNote = !!(sel && !sel.rest), sp = selPitch();
   document.querySelectorAll('[data-alter]').forEach(b => {
     const a = +b.dataset.alter;
     b.disabled = !isNote;
-    b.classList.toggle('on', isNote && sel.alter === a && a !== keyAlter(t.key, sel.step));
+    b.classList.toggle('on', isNote && sp.alter === a && a !== keyAlter(t.key, sp.step));
   });
   $('octUp').disabled = $('octDown').disabled = !isNote;
   $('del').disabled = !t.events.length;
@@ -291,14 +339,20 @@ function sync() {
     const frac = bt % 1, beat = Math.floor(bt) + (frac === 0.5 ? '½' : frac === 0.25 ? '¼' : frac === 0.75 ? '¾' : '');
     ro.className = 'readout';
     ro.innerHTML = `<span></span><span class="sub">bar ${Math.floor(st / tpm) + 1} · beat ${beat}</span>`;
-    ro.firstChild.textContent = (sel.rest ? 'Rest' : pitchName(sel)) + ' · ' + DUR_NAME[sel.dur];
+    if (sel.rest) ro.firstChild.textContent = 'Rest · ' + DUR_NAME[sel.dur];
+    else {
+      // Chord: list pitches bottom to top, underlining the selected one.
+      const ps = M.pitchesOf(sel).map((p, t) => [p, t]).sort((a, b) => diatonic(a[0]) - diatonic(b[0]));
+      ro.firstChild.innerHTML = ps.map(([p, t]) => (ps.length > 1 && t === selTone() ? `<u>${pitchName(p)}</u>` : pitchName(p))).join(' + ')
+        + ' · ' + DUR_NAME[sel.dur];
+    }
   } else {
     ro.className = 'readout idle';
     ro.innerHTML = `<span>Next note: ${DUR_NAME[inputDur]}</span><span class="sub">type A–G or click the staff</span>`;
   }
 
   $('hint').innerHTML = sel
-    ? `<span>${kbd('↑')}${kbd('↓')} pitch</span><span>${kbd('⇧')}+${kbd('↑')}${kbd('↓')} octave</span><span>${kbd('1')}–${kbd('5')} length</span><span>${kbd('#')} ${kbd('-')} ${kbd('=')} accidentals</span><span>${kbd('A')}–${kbd('G')} insert after</span><span>${kbd('⌫')} delete</span><span>${kbd('?')} all shortcuts</span>`
+    ? `<span>${kbd('↑')}${kbd('↓')} pitch</span><span>${kbd('⇧')}+${kbd('A')}–${kbd('G')} add to chord</span>${sel && M.pitchesOf(sel).length > 1 ? `<span>${kbd('Tab')} next chord note</span>` : ''}<span>${kbd('⇧')}+${kbd('↑')}${kbd('↓')} octave</span><span>${kbd('1')}–${kbd('5')} length</span><span>${kbd('#')} ${kbd('-')} ${kbd('=')} accidentals</span><span>${kbd('A')}–${kbd('G')} insert after</span><span>${kbd('⌫')} delete</span><span>${kbd('?')} all shortcuts</span>`
     : `<span>Type ${kbd('A')}–${kbd('G')} to add notes</span><span>Click the staff to place one</span><span>Drag a note from the toolbar</span><span>${kbd('Space')} play</span><span>${kbd('?')} all shortcuts</span>`;
   $('emptyHint').hidden = t.events.length > 0;
 
@@ -314,7 +368,7 @@ function sync() {
   $('mDown').disabled = t.measures <= 1;
   $('settingsSummary').innerHTML = `<span class="mg">${G.mQ}</span>=${t.bpm} · ${keyName(t.key).split(' / ')[0]} · ${t.time} · ${t.measures} bars`;
   document.title = t.title ? `${t.title} — TuneShare` : 'TuneShare';
-  card.setAttribute('aria-label', sel ? `Staff. Selected: ${sel.rest ? 'rest' : pitchName(sel)}, ${DUR_NAME[sel.dur]}` : 'Staff');
+  card.setAttribute('aria-label', sel ? `Staff. Selected: ${sel.rest ? 'rest' : M.pitchesOf(sel).map(pitchName).join(', ')}, ${DUR_NAME[sel.dur]}` : 'Staff');
   syncPlay();
 }
 
@@ -346,7 +400,11 @@ document.addEventListener('keydown', e => {
   }
   const key = e.key;
   let handled = true;
-  if (/^[a-g]$/i.test(key) && !e.altKey) edit(() => typeLetter('CDEFGAB'.indexOf(key.toUpperCase())))();
+  if (/^[a-g]$/i.test(key) && !e.altKey) {
+    const step = 'CDEFGAB'.indexOf(key.toUpperCase());
+    edit(() => (e.shiftKey ? addToneLetter(step) : typeLetter(step)))();
+  }
+  else if (key === 'Tab' && selected() && M.pitchesOf(selected()).length > 1) cycleTone(e.shiftKey ? -1 : 1);
   else if (key === 'r' || key === 'R') edit(typeRest)();
   else if (/^[1-5]$/.test(key)) edit(() => setDur([4, 3, 2, 1, 0][+key - 1]))();
   else if (key === '.') edit(toggleDotted)();
@@ -412,7 +470,7 @@ card.addEventListener('pointermove', ev => {
   if (drag) return;
   if (ev.pointerType !== 'mouse' || !lay) return;
   const { x, y } = svgPoint(ev);
-  if (lay.geo.hitEvent(x, y) >= 0) { if (hover) { hover = null; paintOverlay(); } return; }
+  if (lay.geo.hitEvent(x, y)) { if (hover) { hover = null; paintOverlay(); } return; }
   hover = hoverAt(ev, false);
   paintOverlay();
 });
@@ -423,11 +481,25 @@ card.addEventListener('pointerdown', ev => {
   card.focus({ preventScroll: true });
   const { x, y } = svgPoint(ev);
   const hit = lay.geo.hitEvent(x, y);
-  if (hit >= 0) {
+  // Shift-click in the selected note's column adds a chord tone at that pitch.
+  const sel = selected();
+  if (ev.shiftKey && sel && !sel.rest && (!hit || hit.ev !== selIndex())) {
+    const span = lay.geo.eventSpan(selIndex()), loc = lay.geo.locate(x, y);
+    if (span && loc && loc.k === span.k && x >= span.x1 && x <= span.x2) {
+      const c = CLEFS[tune().clef], d = clampDiatonic(tune().clef, loc.pos + c.bottom), p = fromDiatonic(d);
+      edit(() => addTone({ ...p, alter: keyAlter(tune().key, p.step) }))();
+      ev.preventDefault();
+      return;
+    }
+  }
+  if (hit) {
     stopPlayback();
-    select(hit);
-    const e = tune().events[hit];
-    if (!e.rest) drag = { kind: 'pitch', id: ev.pointerId, index: hit, startY: y, original: tune(), startD: diatonic(e), lastD: diatonic(e) };
+    select(hit.ev, hit.tone);
+    const e = tune().events[hit.ev];
+    if (!e.rest) {
+      const d0 = diatonic(M.pitchesOf(e)[hit.tone]);
+      drag = { kind: 'pitch', id: ev.pointerId, index: hit.ev, tone: hit.tone, startY: y, original: tune(), startD: d0, lastD: d0 };
+    }
   } else {
     hover = hoverAt(ev, false);
     if (!hover) { store.setCursor({ type: 'caret', index: tune().events.length }); return; }
@@ -447,11 +519,12 @@ card.addEventListener('pointermove', ev => {
     const d = clampDiatonic(tune().clef, drag.startD + steps);
     if (d === drag.lastD) return;
     drag.lastD = d; drag.moved = true;
-    const p = fromDiatonic(d), e = tune().events[drag.index];
-    const n = { ...e, ...p, alter: keyAlter(tune().key, p.step) };
-    store.tune = { ...tune(), events: tune().events.map((x, i) => (i === drag.index ? n : x)) };
+    const p = { ...fromDiatonic(d), alter: keyAlter(tune().key, fromDiatonic(d).step) };
+    const r = M.setTonePitch(tune(), drag.index, drag.tone, p);
+    if (r.error) return;                       // would land on another chord note: skip that position
+    store.tune = r.tune;
     render();
-    if (previewOn) preview(n);
+    if (previewOn) preview(p);
   }
 });
 
@@ -595,6 +668,13 @@ store.subscribe(change => {
   if (change === 'tune') render();
   else { paintClasses(); paintOverlay(); sync(); }
 });
+// Warn once when a link grows past what chat apps, email and QR codes handle reliably.
+const LONG_LINK = 2000;
+let warnedLong = false;
+store.onUrl = len => {
+  if (len > LONG_LINK && !warnedLong) toast({ kind: 'warn', title: 'This link is getting long', body: `${len} characters — some apps may cut it off.` });
+  warnedLong = len > LONG_LINK;
+};
 addEventListener('hashchange', () => {
   if (location.hash === store.lastHash) return;
   stopPlayback();

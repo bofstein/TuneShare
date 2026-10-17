@@ -134,7 +134,7 @@ svg.staff { display: block; overflow: visible; }
 .staff text.mnum { fill: var(--ink-3); font: italic 11px system-ui; }
 .staff .halo { fill: transparent; }
 .staff .ev { cursor: pointer; }
-.staff .sel .halo { fill: var(--accent-soft-2); }
+.staff .sel .halo.on { fill: var(--accent-soft-2); }
 .staff .sel text, .staff .sel .ink { fill: var(--accent); }
 .staff .sel .stem, .staff .sel .ledger { stroke: var(--accent); }
 .staff .play .halo { fill: var(--play-soft); }
