@@ -61,7 +61,10 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
   This means a note keeps its pitch when edits move it to another measure,
   and changing the key keeps the melody sounding the same.
 - The key signature still guides entry: typing a letter, or moving a note
-  with ↑/↓, uses the key's alteration for that letter.
+  along the scale with `Ctrl`+`↑`/`↓`, uses the key's alteration for that letter.
+- `↑`/`↓` move a half step (`halfStep` in `theory.js`). The result is spelled
+  as a note of the key's scale if it is one, else as a natural, else as a sharp
+  going up or a flat going down; a note is never double-sharped or double-flatted.
 
 ### Editing rules
 
@@ -164,7 +167,8 @@ breaks lenient decoding of truncated links.
   note to select it; click empty staff to add a note.
 - **Every action has a keyboard shortcut**, shown on the button or in its
   tooltip, and listed in the shortcut sheet (`?`). Letters are pitches,
-  `1`–`5` are lengths (whole → 16th), and arrows move or change pitch.
+  `1`–`5` are lengths (whole → 16th), and arrows move or change pitch
+  (`↑`/`↓` a half step, `Ctrl`+`↑`/`↓` along the key's scale, `Shift` an octave).
   `Shift`+letter adds a note to the selected chord, and `Tab` moves between
   its notes. `Alt`+`↑`/`↓` moves to the other staff at the same beat.
 - **The cursor belongs to one staff** (the active staff). Typing and the

@@ -1,7 +1,7 @@
 // App controller: wires the store, staff rendering, input, toolbar and playback.
 import {
   CLEFS, DUR_NAME, DUR_TICKS, KEY_NAMES, canDot, clampDiatonic, diatonic, fromDiatonic, keyAlter, keyLabel,
-  keyName, pitchName, tempoWord, toggleDot, undotted,
+  halfStep, keyName, pitchName, tempoWord, toggleDot, undotted,
 } from './theory.js';
 import * as M from './model.js';
 import { decode, encode } from './codec.js';
@@ -181,6 +181,15 @@ function movePitch(steps) {
   if (!cur) return;
   const d = clampDiatonic(tune().clef, diatonic(cur) + steps);
   const p = { ...fromDiatonic(d), alter: Math.abs(steps) === 7 ? cur.alter : keyAlter(tune().key, fromDiatonic(d).step) };
+  apply(M.setTonePitch(tune(), selIndex(), selTone(), p), null, p);
+}
+
+/** Move the selected pitch a half step; stays put at the edge of the staff's range. */
+function moveHalfStep(dir) {
+  const cur = selPitch();
+  if (!cur) return;
+  const p = halfStep(cur, dir, tune().key);
+  if (diatonic(p) !== clampDiatonic(tune().clef, diatonic(p))) return;
   apply(M.setTonePitch(tune(), selIndex(), selTone(), p), null, p);
 }
 
@@ -397,7 +406,7 @@ function sync() {
   }
 
   $('hint').innerHTML = sel
-    ? `<span>${kbd('↑')}${kbd('↓')} pitch</span><span>${kbd('⇧')}+${kbd('A')}–${kbd('G')} add to chord</span>${sel && M.pitchesOf(sel).length > 1 ? `<span>${kbd('Tab')} next chord note</span>` : ''}<span>${kbd('⇧')}+${kbd('↑')}${kbd('↓')} octave</span><span>${kbd('1')}–${kbd('5')} length</span><span>${kbd('#')} ${kbd('-')} ${kbd('=')} accidentals</span><span>${kbd('A')}–${kbd('G')} insert after</span><span>${kbd('⌫')} delete</span><span>${kbd('?')} all shortcuts</span>`
+    ? `<span>${kbd('↑')}${kbd('↓')} half step</span><span>${kbd('Ctrl')}+${kbd('↑')}${kbd('↓')} scale step</span><span>${kbd('⇧')}+${kbd('A')}–${kbd('G')} add to chord</span>${sel && M.pitchesOf(sel).length > 1 ? `<span>${kbd('Tab')} next chord note</span>` : ''}<span>${kbd('⇧')}+${kbd('↑')}${kbd('↓')} octave</span><span>${kbd('1')}–${kbd('5')} length</span><span>${kbd('#')} ${kbd('-')} ${kbd('=')} accidentals</span><span>${kbd('A')}–${kbd('G')} insert after</span><span>${kbd('⌫')} delete</span><span>${kbd('?')} all shortcuts</span>`
     : `<span>Type ${kbd('A')}–${kbd('G')} to add notes</span><span>Click the staff to place one</span><span>Drag a note from the toolbar</span><span>${kbd('Space')} play</span><span>${kbd('?')} all shortcuts</span>`;
   $('emptyHint').hidden = store.tune.events.length > 0 || twoStaves();
 
@@ -447,6 +456,11 @@ document.addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
     if (k === 'z' && !e.shiftKey) { stopPlayback(); store.undo(); e.preventDefault(); }
     else if ((k === 'z' && e.shiftKey) || k === 'y') { stopPlayback(); store.redo(); e.preventDefault(); }
+    else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.altKey) {
+      const dir = e.key === 'ArrowUp' ? 1 : -1;
+      edit(() => movePitch(e.shiftKey ? 7 * dir : dir))();
+      e.preventDefault();
+    }
     return;
   }
   const key = e.key;
@@ -460,8 +474,8 @@ document.addEventListener('keydown', e => {
   else if (/^[1-5]$/.test(key)) edit(() => setDur([4, 3, 2, 1, 0][+key - 1]))();
   else if (key === '.') edit(toggleDotted)();
   else if ((key === 'ArrowUp' || key === 'ArrowDown') && e.altKey) switchStaff(key === 'ArrowUp' ? -1 : 1);
-  else if (key === 'ArrowUp') edit(() => movePitch(e.shiftKey ? 7 : 1))();
-  else if (key === 'ArrowDown') edit(() => movePitch(e.shiftKey ? -7 : -1))();
+  else if (key === 'ArrowUp') edit(() => (e.shiftKey ? movePitch(7) : moveHalfStep(1)))();
+  else if (key === 'ArrowDown') edit(() => (e.shiftKey ? movePitch(-7) : moveHalfStep(-1)))();
   else if (key === '#' || key === '+') edit(() => setAlter(1))();
   else if (key === '-' || key === '_') edit(() => setAlter(-1))();
   else if (key === '=' || key === 'n' || key === 'N') edit(() => setAlter(0))();

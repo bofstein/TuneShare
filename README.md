@@ -8,7 +8,8 @@ fragment, and there is no server.
 ## Using it
 
 - Type `A`–`G` to add notes, `1`–`5` to pick a length (whole … 16th), `.` for a
-  dot, `R` for a rest. Arrows change pitch and move the selection.
+  dot, `R` for a rest. `↑`/`↓` move the selected note a half step (`Ctrl`+`↑`/`↓` along the key's
+  scale, `Shift` an octave); `←`/`→` move the selection.
 - `Shift`+`A`–`G` stacks a note onto the selected one to make a chord (up to
   5 notes); `Tab` moves between a chord's notes.
 - Or click the staff, or drag a note from the toolbar onto it.

@@ -39,6 +39,23 @@ export const diatonic = p => p.oct * 7 + p.step;
 export const fromDiatonic = d => ({ step: ((d % 7) + 7) % 7, oct: Math.floor(d / 7) });
 export const midiOf = p => 12 * (p.oct + 1) + SEMITONES[p.step] + p.alter;
 export const freqOf = midi => 440 * Math.pow(2, (midi - 69) / 12);
+/**
+ * The pitch one half step up (dir = 1) or down (dir = -1), spelled to suit the key:
+ * a note of the key's scale if there is one, else a plain natural, else a sharp going up
+ * or a flat going down. Alterations stay within −1..+1.
+ */
+export function halfStep(p, dir, key) {
+  const target = midiOf(p) + dir;
+  const spellings = [];
+  for (let step = 0; step < 7; step++) {
+    const oct = Math.round((target - SEMITONES[step]) / 12) - 1;
+    const alter = target - midiOf({ step, oct, alter: 0 });
+    if (Math.abs(alter) <= 1) spellings.push({ step, oct, alter });
+  }
+  return spellings.find(q => q.alter === keyAlter(key, q.step))
+    || spellings.find(q => q.alter === 0)
+    || spellings.find(q => q.alter === dir);
+}
 export const pitchName = p => LETTERS[p.step] + (p.alter === 1 ? '♯' : p.alter === -1 ? '♭' : '') + p.oct;
 
 // Diatonic index of the bottom staff line, the middle line, and the editable range.
