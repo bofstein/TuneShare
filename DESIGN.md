@@ -103,8 +103,10 @@ https://bofstein.github.io/TuneShare/#2.<base64url payload>
 - **Old links keep working.** `1.` links (12-bit events in field 7, chords in
   field 8, second staff with fields 2 and 3) are still read by the same
   decoder, and the app rewrites them as `2.` links as soon as it loads one
-  that isn't damaged. A reader that only knows v1 shows the "newer version"
-  notice for a `2.` link.
+  that isn't damaged. A link with a higher version than the code (a stale
+  tab meeting a newer link) makes the app reload once to fetch the new code;
+  if the link is still newer, it shows a "newer version" notice with a Reload
+  button.
 - **Link length:** a typical tune is 40–120 characters, about 3 times shorter
   than the same tune in v1. The app warns once when a link passes 2,000
   characters, roughly what chat apps, email and QR codes handle reliably.
