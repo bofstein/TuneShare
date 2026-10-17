@@ -4,7 +4,7 @@ import {
   keyName, pitchName, tempoWord, toggleDot, undotted,
 } from './theory.js';
 import * as M from './model.js';
-import { decode, encode } from './codec.js';
+import { decode, encode, VERSION } from './codec.js';
 import { dumpFragment } from './debug.js';
 import { layout, G } from './layout.js';
 import { renderStaff, renderOverlay } from './render.js';
@@ -19,6 +19,9 @@ const host = $('staffHost'), card = $('staffCard');
 const initial = decode(location.hash);
 const store = new Store(initial.tune);
 store.lastHash = location.hash;
+// An old-format link is rewritten in the current format right away (replaceState, so no extra Back step).
+// A damaged link is left alone so its toast and original text stay.
+if (initial.version < VERSION && !initial.repaired) store.flushUrl();
 const player = new Player();
 let inputDur = 2;               // duration for the next note; follows the selected note's length
 let previewOn = true, loopOn = false;

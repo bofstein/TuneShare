@@ -1,15 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { encode, decode } from '../src/codec.js';
+import { encode, decode, VERSION } from '../src/codec.js';
 import { tune, ODE } from './helpers.js';
 
-test('empty tune encodes to "1."', () => {
-  assert.equal(encode(tune('')), '1.');
+test('empty tune encodes to "2."', () => {
+  assert.equal(encode(tune('')), '2.');
+  assert.deepEqual(decode('#2.').tune, tune(''));
   assert.deepEqual(decode('#1.').tune, tune(''));
 });
 
 test('spec worked example', () => {
-  assert.equal(encode(tune('B4:q B4:q C5:q D5:q')), '1.OgZGhGhGtG4');
+  assert.equal(encode(tune('B4:q B4:q C5:q D5:q')), '2.UgMotbA');
+  // The v1 form of the same tune still decodes.
+  assert.deepEqual(decode('#1.OgZGhGhGtG4').tune, tune('B4:q B4:q C5:q D5:q'));
+});
+
+test('decode reports the link version, so old links can be upgraded', () => {
+  assert.equal(decode('#1.OgZGhGhGtG4').version, 1);
+  assert.equal(decode('#2.UgMotbA').version, 2);
+  assert.equal(decode(encode(tune('C4:q'))).version, VERSION);
 });
 
 // Fixture links must decode identically forever.
@@ -45,10 +54,20 @@ test('random round trips', () => {
 
 test('truncated link keeps complete notes before the cut', () => {
   const full = encode(tune(ODE, { measures: 8 }));
-  const r = decode('#' + full.slice(0, full.length - 10));
+  const r = decode('#' + full.slice(0, full.length - 4));
   assert.equal(r.repaired, true);
-  assert.ok(r.tune.events.length > 20 && r.tune.events.length < 30);
+  assert.ok(r.tune.events.length > 10 && r.tune.events.length < 32);
   assert.deepEqual(r.tune.events, tune(ODE).events.slice(0, r.tune.events.length));
+});
+
+test('every prefix of a link decodes to a prefix of the notes', () => {
+  const t = { ...tune(ODE, { measures: 8 }), staff2: { clef: 'bass', events: tune('C3:h G2:h C3:h G2:h').events } };
+  t.events[2].tones = [{ step: 4, oct: 4, alter: 0 }];
+  const full = encode(t);
+  for (let n = 2; n < full.length; n++) {
+    const r = decode('#' + full.slice(0, n));
+    assert.deepEqual(r.tune.events, t.events.slice(0, r.tune.events.length), `prefix ${n}`);
+  }
 });
 
 test('unknown fields are skipped', () => {
@@ -76,17 +95,13 @@ test('out-of-range header values are clamped', () => {
   assert.equal(r.repaired, true);
 });
 
-test('chords round-trip and leave the note list unchanged', () => {
+test('chords round-trip', () => {
   const t = tune('C4:q D4:h E4:q');
   t.events[0].tones = [{ step: 2, oct: 4, alter: 0 }, { step: 4, oct: 4, alter: 1 }];
   t.events[2].tones = [{ step: 0, oct: 5, alter: -1 }];
-  const enc = encode(t);
-  assert.deepEqual(decode('#' + enc).tune, t);
-  // An app without chord support only reads field 7, which is identical to the chord-free encoding.
-  const plain = encode(tune('C4:q D4:h E4:q'));
-  assert.ok(enc.length > plain.length);
-  const bare = decode('#' + plain).tune.events;
-  assert.deepEqual(decode('#' + enc).tune.events.map(({ tones, ...e }) => e), bare);
+  const r = decode('#' + encode(t));
+  assert.equal(r.repaired, false);
+  assert.deepEqual(r.tune, t);
 });
 
 test('chords are not capped by the format', () => {
@@ -96,7 +111,7 @@ test('chords are not capped by the format', () => {
   assert.equal(decode('#' + encode(t)).tune.events[0].tones.length, 8);
 });
 
-test('chord entries for rests or missing events are dropped as repairs', () => {
+test('a chord after a rest keeps its tones', () => {
   const t = tune('r:q C4:q');
   t.events[1].tones = [{ step: 2, oct: 4, alter: 0 }];
   const r = decode('#' + encode(t));
@@ -115,14 +130,6 @@ test('second staff round-trips with its own clef and chords', () => {
   // An empty second staff is kept, and its clef can be treble.
   const e = { ...tune('C4:q'), staff2: { clef: 'treble', events: [] } };
   assert.deepEqual(decode('#' + encode(e)).tune, e);
-});
-
-test('a reader without staves still gets the first staff unchanged', () => {
-  const one = tune('C5:q D5:q E5:h');
-  const two = { ...one, staff2: { clef: 'bass', events: tune('C3:w').events } };
-  // Field 9 is a length-delimited field, which older readers skip (see 'unknown fields are skipped').
-  const { staff2, ...rest } = decode('#' + encode(two)).tune;
-  assert.deepEqual(rest, one);
 });
 
 test('second staff is trimmed to the shared capacity', () => {
