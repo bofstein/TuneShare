@@ -25,7 +25,7 @@ test('random round trips', () => {
   const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return Math.floor((seed / 2147483648) * n); };
   for (let k = 0; k < 300; k++) {
     const time = ['4/4', '3/4', '2/4', '6/8'][rnd(4)];
-    const cap = 12 * { '4/4': 16, '3/4': 12, '2/4': 8, '6/8': 12 }[time];
+    const cap = 20 * { '4/4': 16, '3/4': 12, '2/4': 8, '6/8': 12 }[time];
     const events = [];
     for (let i = 0, n = rnd(60), used = 0; i < n; i++) {
       const e = rnd(6) === 0 ? { rest: true, dur: rnd(8) } : { dur: rnd(8), step: rnd(7), oct: 1 + rnd(6), alter: rnd(3) - 1 };
@@ -35,7 +35,7 @@ test('random round trips', () => {
     }
     const t = {
       title: rnd(2) ? 'Tüne ♪ ' + k : '', bpm: 40 + rnd(201), key: rnd(15) - 7, clef: rnd(2) ? 'bass' : 'treble',
-      time, measures: 12, events,
+      time, measures: 20, events,
     };
     const r = decode('#' + encode(t));
     assert.equal(r.repaired, false);
@@ -72,7 +72,7 @@ test('out-of-range header values are clamped', () => {
   const bytes = [0x10, 0xe8, 0x07, 0x30, 0x63]; // bpm 1000, measures 99
   const r = decode('#1.' + Buffer.from(bytes).toString('base64url'));
   assert.equal(r.tune.bpm, 240);
-  assert.equal(r.tune.measures, 12);
+  assert.equal(r.tune.measures, 20);
   assert.equal(r.repaired, true);
 });
 

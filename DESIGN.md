@@ -23,7 +23,7 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 
 | In | Out (for now) |
 | --- | --- |
-| Up to 12 measures | Lyrics; independent rhythms within one staff |
+| Up to 20 measures | Lyrics; independent rhythms within one staff |
 | Chords: up to 5 notes of the same length (an app limit, not a format limit) | Chords whose notes have different lengths |
 | A second staff (planned: [#4](https://github.com/bofstein/TuneShare/issues/4)) | More than two staves |
 | Treble and bass clef; all 15 key signatures | Changing key, clef or tempo partway through |
@@ -67,7 +67,7 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 - Clicking past the end of the content pads with rests, so the note lands
   where the ghost note showed it.
 - Removing a measure is allowed only if it holds nothing but rests. Changing
-  the time signature adds measures automatically if needed (up to 12).
+  the time signature adds measures automatically if needed (up to 20).
 - All edits are pure functions in `src/model.js` that return `{tune}` or
   `{error}`. The UI keeps undo history as snapshots.
 

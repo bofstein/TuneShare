@@ -1,7 +1,7 @@
 # TuneShare
 Web app to create and share simple, short melodies through URLs.
 
-Write up to 12 measures on a staff, play them back, and share the whole tune
+Write up to 20 measures on a staff, play them back, and share the whole tune
 as a link. The link *is* the document: everything is encoded in the URL
 fragment, and there is no server.
 
