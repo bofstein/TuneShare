@@ -16,7 +16,7 @@ function toB64(bytes) {
   return s;
 }
 
-function fromB64(str) {
+export function fromB64(str) {
   const vals = [];
   let dropped = false;
   for (const c of str.replace(/\+/g, '-').replace(/\//g, '_')) {
@@ -49,7 +49,7 @@ function pack12(words) {
   return p;
 }
 
-function unpack12(bytes) {
+export function unpack12(bytes) {
   const out = [];
   for (let k = 0, count = Math.floor((bytes.length * 8) / 12); k < count; k++) {
     const bit = k * 12, b = bit >> 3;
