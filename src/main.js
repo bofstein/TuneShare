@@ -10,6 +10,7 @@ import { layout, G } from './layout.js';
 import { renderStaff, renderOverlay } from './render.js';
 import { Player, preview } from './audio.js';
 import { Store } from './store.js';
+import { toggleTheme } from './theme.js';
 
 const $ = id => document.getElementById(id);
 const host = $('staffHost'), card = $('staffCard');
@@ -707,6 +708,7 @@ $('copy').onclick = async () => {
 function openSheet() { $('sheet').hidden = false; $('sheetClose').focus(); }
 function closeSheet() { $('sheet').hidden = true; card.focus({ preventScroll: true }); }
 $('help').onclick = openSheet;
+$('theme').onclick = toggleTheme;
 $('sheetClose').onclick = closeSheet;
 $('sheet').onclick = e => { if (e.target === $('sheet')) closeSheet(); };
 
