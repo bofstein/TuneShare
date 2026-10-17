@@ -171,7 +171,9 @@ breaks lenient decoding of truncated links.
   clef setting apply to it; clicking a staff makes it active.
 - **Colours have fixed meanings:** the selection is indigo, the note playing
   is amber, and warnings are amber with a ⚠ icon. Colour is never the only
-  signal. Light and dark themes follow the system setting.
+  signal. Light and dark themes follow the system setting until the user
+  picks one with the header toggle; that choice is kept in `localStorage`
+  (not in the link, since it is a viewer preference, not part of the tune).
 - **Phones** show 2 measures per line, with the note toolbar fixed to the
   bottom in two rows of 44 px buttons.
 

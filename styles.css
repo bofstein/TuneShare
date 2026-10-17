@@ -11,18 +11,17 @@
   --shadow-lg: 0 8px 32px rgba(20,22,40,.18);
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page: #0e1014; --surface: #171a21; --surface-2: #1d2129; --surface-3: #252a34;
-    --ink: #e9eaf0; --ink-2: #a7aab8; --ink-3: #747888; --line: #2a2e39; --line-2: #363b48;
-    --accent: #8b85ff; --accent-ink: #14121f; --accent-soft: rgba(139,133,255,.16); --accent-soft-2: rgba(139,133,255,.28);
-    --play: #f59e0b; --play-soft: rgba(245,158,11,.22);
-    --warn: #f5b84a; --warn-line: #f59e0b;
-    --staff: #e4e5ec; --staff-faint: #4a4f5e; --staff-line: #b9bcc8;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,.5);
-    color-scheme: dark;
-  }
+/* data-theme is always set before first paint (see index.html and src/theme.js) */
+:root[data-theme="dark"] {
+  --page: #0e1014; --surface: #171a21; --surface-2: #1d2129; --surface-3: #252a34;
+  --ink: #e9eaf0; --ink-2: #a7aab8; --ink-3: #747888; --line: #2a2e39; --line-2: #363b48;
+  --accent: #8b85ff; --accent-ink: #14121f; --accent-soft: rgba(139,133,255,.16); --accent-soft-2: rgba(139,133,255,.28);
+  --play: #f59e0b; --play-soft: rgba(245,158,11,.22);
+  --warn: #f5b84a; --warn-line: #f59e0b;
+  --staff: #e4e5ec; --staff-faint: #4a4f5e; --staff-line: #b9bcc8;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.5);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -56,6 +55,9 @@ button:disabled { cursor: default; }
 .icon-btn { width: 36px; height: 36px; display: inline-grid; place-items: center; border-radius: 9px; border: 1px solid transparent; background: transparent; color: var(--ink-2); }
 .icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
 .icon-btn.on { background: var(--accent-soft); color: var(--accent); }
+#theme .sun { display: none; }
+[data-theme="dark"] #theme .moon { display: none; }
+[data-theme="dark"] #theme .sun { display: block; }
 .icon-btn:disabled { opacity: .35; }
 #preview:not(.on) .wave { display: none; }
 .pop-wrap { position: relative; }
