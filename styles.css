@@ -122,6 +122,9 @@ button:disabled { cursor: default; }
 .staff-card:focus-visible { box-shadow: var(--shadow), 0 0 0 3px var(--accent-soft-2); }
 .empty-hint { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; color: var(--ink-3); font-size: 13.5px; pointer-events: none; padding: 0 12px; }
 .hint { margin: 10px 26px 0; color: var(--ink-3); font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.site-foot { margin: 18px 26px 0; color: var(--ink-3); font-size: 12px; }
+.site-foot a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.site-foot a:hover { color: var(--ink-2); }
 .hint span { display: inline-flex; gap: 5px; align-items: center; }
 kbd { font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 3px 5px; border-radius: 5px; border: 1px solid var(--line-2); border-bottom-width: 2px; background: var(--surface); color: var(--ink-2); }
 
