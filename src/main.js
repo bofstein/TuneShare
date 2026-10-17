@@ -297,7 +297,7 @@ function sync() {
   }
 
   $('hint').innerHTML = sel
-    ? `<span>${kbd('↑')}${kbd('↓')} pitch</span><span>${kbd('1')}–${kbd('5')} length</span><span>${kbd('#')} ${kbd('-')} ${kbd('=')} accidentals</span><span>${kbd('A')}–${kbd('G')} insert after</span><span>${kbd('⌫')} delete</span><span>${kbd('?')} all shortcuts</span>`
+    ? `<span>${kbd('↑')}${kbd('↓')} pitch</span><span>${kbd('⇧')}+${kbd('↑')}${kbd('↓')} octave</span><span>${kbd('1')}–${kbd('5')} length</span><span>${kbd('#')} ${kbd('-')} ${kbd('=')} accidentals</span><span>${kbd('A')}–${kbd('G')} insert after</span><span>${kbd('⌫')} delete</span><span>${kbd('?')} all shortcuts</span>`
     : `<span>Type ${kbd('A')}–${kbd('G')} to add notes</span><span>Click the staff to place one</span><span>Drag a note from the toolbar</span><span>${kbd('Space')} play</span><span>${kbd('?')} all shortcuts</span>`;
   $('emptyHint').hidden = t.events.length > 0;
 
@@ -323,7 +323,7 @@ function syncPlay() {
   const b = $('play');
   b.classList.toggle('playing', player.playing);
   b.innerHTML = player.playing ? STOP : PLAY;
-  b.setAttribute('aria-label', player.playing ? 'Stop' : 'Play');
+  b.setAttribute('aria-label', player.playing ? 'Stop (Space)' : 'Play (Space)');
   $('loop').classList.toggle('on', loopOn);
   $('loop').setAttribute('aria-pressed', loopOn);
   $('preview').classList.toggle('on', previewOn);
