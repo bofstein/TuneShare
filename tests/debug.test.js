@@ -82,3 +82,8 @@ test('v2: an accidental outside the key is named', () => {
   const d = dumpFragment('#' + encode(tune('F#4:q')));
   assert.match(d, /accidental ♯ \(outside key\)\n +\[0\] quarter F♯4/);
 });
+
+test('instrument field is named and decoded', () => {
+  const d = dumpFragment('#' + encode({ ...tune(''), instrument: 'choir' }));
+  assert.match(d, /11 instrument \(varint\) @\d+: 9  Choir/);
+});

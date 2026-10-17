@@ -43,6 +43,7 @@
       <div class="field"><span class="lbl">Tempo</span>
         <div class="stepper"><button id="bpmDown" aria-label="Slower">−</button><label class="val"><span class="mg">&#xECA5;</span>=<input id="bpm" type="number" min="40" max="240" inputmode="numeric" aria-label="Tempo in BPM"></label><button id="bpmUp" aria-label="Faster">+</button></div>
         <span class="muted" id="tempoWord"></span></div>
+      <label class="field"><span class="lbl">Sound</span><select id="instrument" class="select" aria-label="Instrument sound"></select></label>
       <label class="field"><span class="lbl">Key</span><select id="key" class="select"></select></label>
       <div class="field"><span class="lbl">Staves</span>
         <div class="seg" role="group" aria-label="Staves"><button id="staves1" title="One staff" aria-label="One staff">1</button><button id="staves2" title="Two staves, played together" aria-label="Two staves">2</button></div></div>
@@ -96,7 +97,7 @@
   <div class="hint" id="hint"></div>
   <p class="sr-only" id="announce" aria-live="polite"></p>
   <footer class="site-foot">
-    <a href="https://github.com/bofstein/TuneShare">Source on GitHub</a> · MIT license · Made by <a href="https://github.com/fehknt">fehknt</a> and <a href="https://github.com/bofstein">bofstein</a> · Built with Claude
+    <a href="https://github.com/bofstein/TuneShare">Source on GitHub</a> · MIT license · Made by <a href="https://github.com/fehknt">fehknt</a> and <a href="https://github.com/bofstein">bofstein</a> · Built with Claude · Instrument sounds are synthesized in your browser, no samples
   </footer>
 </div>
 

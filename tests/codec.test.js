@@ -167,3 +167,17 @@ test('a full-length two-staff tune stays under 800 characters', () => {
   assert.equal(r.repaired, false);
   assert.deepEqual(r.tune, t);
 });
+
+test('instrument: default writes nothing, others round-trip as field 11', () => {
+  assert.equal(encode({ ...tune(''), instrument: 'synth' }), '2.');
+  const r = decode(encode(tune(ODE, { measures: 8, instrument: 'violin' })));
+  assert.equal(r.tune.instrument, 'violin');
+  assert.equal(r.repaired, false);
+  assert.equal(decode(encode(tune(ODE))).tune.instrument, undefined);
+});
+
+test('instrument: unknown index falls back to the default as a repair', () => {
+  const r = decode('#2.' + Buffer.from([0x58, 0x63]).toString('base64url')); // field 11 = 99
+  assert.equal(r.tune.instrument, undefined);
+  assert.equal(r.repaired, true);
+});

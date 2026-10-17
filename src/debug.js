@@ -5,6 +5,7 @@
 import { fromB64, unpack12, codeEvent } from './codec.js';
 import { parseVoice, resolveVoice } from './voice.js';
 import { DUR_NAME, LETTERS, TIMES } from './theory.js';
+import { INSTRUMENTS } from './instruments.js';
 
 const WIRE = ['varint', 'i64', 'len', 'sgroup', 'egroup', 'i32'];
 const FIELDS = {
@@ -13,7 +14,7 @@ const FIELDS = {
 const CHORD_FIELDS = { 1: 'index', 2: 'tones' };
 const STAFF_FIELDS = { 1: 'clef', 2: 'events', 3: 'chord' };
 // v2 links: the note data is one bit-stream "voice" per staff (src/voice.js).
-const FIELDS_V2 = { 1: 'title', 2: 'bpm', 3: 'key', 4: 'clef', 5: 'time', 6: 'measures', 9: 'staff2', 10: 'voice' };
+const FIELDS_V2 = { 1: 'title', 2: 'bpm', 3: 'key', 4: 'clef', 5: 'time', 6: 'measures', 9: 'staff2', 10: 'voice', 11: 'instrument' };
 const STAFF_FIELDS_V2 = { 1: 'clef', 4: 'voice' };
 
 const hex = bytes => bytes.map(b => b.toString(16).padStart(2, '0')).join(' ');
@@ -99,6 +100,7 @@ function annotate(f) {
     case 4: return f.wire === 0 && (['TREBLE', 'BASS'][v] ?? 'unknown enum');
     case 5: return f.wire === 0 && (TIMES[v] ?? 'unknown enum');
     case 6: return f.wire === 0 && `${v} measures`;
+    case 11: return f.wire === 0 && (INSTRUMENTS[v]?.name ?? 'unknown instrument');
   }
   return '';
 }

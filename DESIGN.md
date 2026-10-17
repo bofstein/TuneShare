@@ -99,7 +99,9 @@ https://bofstein.github.io/TuneShare/#2.<base64url payload>
   default. Readers skip unknown fields, so new features can be added as new
   field numbers without breaking links in either direction.
 - Header fields: `title = 1`, `bpm = 2`, `key = 3` (zigzag), `clef = 4`
-  (1 = bass), `time = 5` (index into 4/4, 3/4, 2/4, 6/8), `measures = 6`.
+  (1 = bass), `time = 5` (index into 4/4, 3/4, 2/4, 6/8), `measures = 6`,
+  `instrument = 11` (index into `INSTRUMENTS`; absent = Soft synth; an unknown
+  index falls back to the default).
   `voice = 10` is the first staff. `staff2 = 9` is
   `Staff { Clef clef = 1; bytes voice = 4; }`; its presence, even with no
   notes, means the tune has two staves.
@@ -231,8 +233,15 @@ lenient decoding of truncated links.
   9 KB. The OFL reserves the name "Bravura" for the unmodified font, so the
   subset is renamed "TuneShare Glyphs". The licence is in
   `assets/fonts/OFL-Bravura.txt`.
-- **Sound** is synthesised with the Web Audio API: two oscillators, an envelope
-  and a low-pass filter. There are no samples. Each note of a chord plays at
+- **Sound** is synthesised with the Web Audio API; there are no samples, so
+  nothing to license, download or wait for. One instrument plays the whole
+  tune (`src/instruments.js` lists them; `src/audio.js` builds each voice). The
+  default "Soft synth" is the original sound: two oscillators, an envelope and
+  a low-pass filter. Piano and electric piano are struck additive tones,
+  guitars are Karplus-Strong plucks rendered once per pitch and cached, and
+  violin, trumpet, flute, sax and choir are filtered oscillators with
+  vibrato (choir uses "ah" formants). They are recognisable rather than
+  realistic; realistic sounds would need sample sets of several MB. Each note of a chord plays at
   1/√n volume, so chords don't clip. Playback is scheduled against
   the audio clock, and highlighting follows that same clock.
 

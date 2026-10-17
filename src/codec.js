@@ -5,6 +5,7 @@ import { TIMES } from './theory.js';
 import { defaultTune, capacity, trimToCapacity, MAX_MEASURES } from './model.js';
 import { planVoice, writeVoice, parseVoice, resolveVoice } from './voice.js';
 
+import { INSTRUMENTS, instrumentIndex } from './instruments.js';
 export const VERSION = 2;
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
@@ -69,6 +70,8 @@ export function encode(t) {
   const ti = TIMES.indexOf(t.time);
   if (ti > 0) { tag(5, 0); varint(ti); }
   if (t.measures !== 4) { tag(6, 0); varint(t.measures); }
+  const ins = instrumentIndex(t.instrument);
+  if (ins) { tag(11, 0); varint(ins); }
   // Field 10: the first staff's voice. Field 9: Staff { Clef clef = 1; bytes voice = 4; },
   // present (even if empty) when the tune has a second staff; its voice may copy from the first.
   if (t.events.length) bytes(10, writeVoice(planVoice(t.events, t.key, t.clef)));
@@ -128,6 +131,7 @@ export function decode(fragment) {
         else if (field === 3) tune.key = clamp((v >>> 1) ^ -(v & 1), -7, 7, 0);
         else if (field === 4) tune.clef = v === 1 ? 'bass' : 'treble';
         else if (field === 5) tune.time = TIMES[v] ?? (repaired = true, '4/4');
+        else if (field === 11) { if (v > 0 && v < INSTRUMENTS.length) tune.instrument = INSTRUMENTS[v].id; else if (v) repaired = true; }
         else if (field === 6) tune.measures = v === 0 ? 4 : clamp(v, 1, MAX_MEASURES, 4);
       } else if (wire === 2) {
         const len = varint();
