@@ -18,7 +18,7 @@ const initial = decode(location.hash);
 const store = new Store(initial.tune);
 store.lastHash = location.hash;
 const player = new Player();
-let inputDur = 2;               // duration for the next note when nothing is selected
+let inputDur = 2;               // duration for the next note; follows the selected note's length
 let previewOn = true, loopOn = false;
 let playing = -1;               // event index currently sounding, -1 = none
 let lay = null;
@@ -267,6 +267,7 @@ const activeDurForGhost = () => (drag && drag.kind === 'chip' ? drag.dur : input
 const kbd = s => `<kbd>${s}</kbd>`;
 function sync() {
   const t = tune(), sel = selected();
+  if (sel) inputDur = sel.dur;    // new notes take the length of the last selected note (#6)
   const dur = activeDur(), base = undotted(dur);
   document.querySelectorAll('[data-dur]').forEach(b => b.classList.toggle('on', +b.dataset.dur === base));
   $('dot').classList.toggle('on', dur >= 5);
