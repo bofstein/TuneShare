@@ -42,9 +42,10 @@ button:disabled { cursor: default; }
 .app { padding-bottom: 24px; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
 .app-head { display: flex; align-items: center; gap: 8px; padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
-/* the master logo is dark navy, so it sits on a light tile in both themes */
-.logo { width: 32px; height: 32px; border-radius: 8px; background: #f4f3ff; display: grid; place-items: center; overflow: hidden; }
-.logo img { width: 20px; height: 24px; display: block; }
+/* the master logo has a transparent background; it is drawn as a mask so the ink and tile follow the theme */
+.logo { --logo-bg: #f4f3ff; --logo-ink: #231e56; width: 32px; height: 32px; border-radius: 8px; background: var(--logo-bg); display: grid; place-items: center; overflow: hidden; }
+.logo i { width: 20px; height: 24px; background: var(--logo-ink); -webkit-mask: url(assets/logo.svg) center / contain no-repeat; mask: url(assets/logo.svg) center / contain no-repeat; }
+[data-theme="dark"] .logo { --logo-bg: #262340; --logo-ink: #b5b0ff; }
 .title-field { margin-left: 10px; padding: 5px 10px; border-radius: 8px; border: 1px dashed transparent; background: transparent; font-size: 15px; font-weight: 550; min-width: 0; width: 22ch; }
 .title-field:hover { border-color: var(--line-2); background: var(--surface-2); }
 .title-field:focus { border-style: solid; border-color: var(--accent); background: var(--surface); outline: none; }
