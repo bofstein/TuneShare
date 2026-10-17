@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { encode, decode, VERSION } from '../src/codec.js';
+import { MAX_MEASURES } from '../src/model.js';
 import { tune, ODE } from './helpers.js';
 
 test('empty tune encodes to "2."', () => {
@@ -34,7 +35,7 @@ test('random round trips', () => {
   const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return Math.floor((seed / 2147483648) * n); };
   for (let k = 0; k < 300; k++) {
     const time = ['4/4', '3/4', '2/4', '6/8'][rnd(4)];
-    const cap = 20 * { '4/4': 16, '3/4': 12, '2/4': 8, '6/8': 12 }[time];
+    const cap = MAX_MEASURES * { '4/4': 16, '3/4': 12, '2/4': 8, '6/8': 12 }[time];
     const events = [];
     for (let i = 0, n = rnd(60), used = 0; i < n; i++) {
       const e = rnd(6) === 0 ? { rest: true, dur: rnd(8) } : { dur: rnd(8), step: rnd(7), oct: 1 + rnd(6), alter: rnd(3) - 1 };
@@ -44,7 +45,7 @@ test('random round trips', () => {
     }
     const t = {
       title: rnd(2) ? 'Tüne ♪ ' + k : '', bpm: 40 + rnd(201), key: rnd(15) - 7, clef: rnd(2) ? 'bass' : 'treble',
-      time, measures: 20, events,
+      time, measures: MAX_MEASURES, events,
     };
     const r = decode('#' + encode(t));
     assert.equal(r.repaired, false);
@@ -91,7 +92,7 @@ test('out-of-range header values are clamped', () => {
   const bytes = [0x10, 0xe8, 0x07, 0x30, 0x63]; // bpm 1000, measures 99
   const r = decode('#1.' + Buffer.from(bytes).toString('base64url'));
   assert.equal(r.tune.bpm, 240);
-  assert.equal(r.tune.measures, 20);
+  assert.equal(r.tune.measures, MAX_MEASURES);
   assert.equal(r.repaired, true);
 });
 
@@ -144,4 +145,25 @@ test('fixture: two-staff link', () => {
   const r = decode('#1.OgNGhGhKBwgBEgNEFEE');
   assert.equal(r.repaired, false);
   assert.deepEqual(r.tune, { ...tune('B4:q B4:q'), staff2: { clef: 'bass', events: tune('C3:q C3:q').events } });
+});
+
+// Link-length budget for the measure limit (DESIGN.md, "Measure limit"): a full-length tune of ordinary
+// music has to stay far below the 2,000 characters the app warns at.
+test('a full-length two-staff tune stays under 800 characters', () => {
+  const mel = [], bass = [];
+  let step = 30;
+  for (let m = 0; m < MAX_MEASURES; m++) {
+    for (const dur of [[2, 2, 2, 2], [6, 1, 2, 2], [1, 1, 1, 1, 3]][m % 3]) {
+      step = Math.max(24, Math.min(40, step + ((m * 7 + mel.length * 5) % 5) - 2));
+      mel.push({ dur, step: step % 7, oct: Math.floor(step / 7), alter: 0 });
+    }
+    const root = 14 + ((m * 3) % 7);
+    for (const r of [root, root + 4]) bass.push({ dur: 3, step: r % 7, oct: Math.floor(r / 7), alter: 0, tones: [2, 4].map(o => ({ step: (r + o) % 7, oct: Math.floor((r + o) / 7), alter: 0 })) });
+  }
+  const t = tune('', { measures: MAX_MEASURES, events: mel, staff2: { clef: 'bass', events: bass } });
+  const link = encode(t);
+  assert.ok(link.length < 800, `${link.length} characters`);
+  const r = decode('#' + link);
+  assert.equal(r.repaired, false);
+  assert.deepEqual(r.tune, t);
 });

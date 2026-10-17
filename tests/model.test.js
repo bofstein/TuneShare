@@ -55,7 +55,14 @@ test('time signature change expands measures to fit', () => {
   const r = M.setTime(tune('C4:w C4:w C4:w C4:w'), '3/4');
   assert.equal(r.tune.measures, 6);
   assert.equal(r.expanded, 6);
-  assert.equal(M.setTime(tune('C4:w '.repeat(12), { measures: 12 }), '2/4').error, M.ERR_FULL);
+  // Each whole note takes two 2/4 measures, so one more than half the limit no longer fits.
+  const wholes = M.MAX_MEASURES / 2 + 1;
+  assert.equal(M.setTime(tune('C4:w '.repeat(wholes), { measures: wholes }), '2/4').error, M.ERR_FULL);
+});
+
+test('the measure count is limited to MAX_MEASURES', () => {
+  assert.equal(M.setMeasures(tune('C4:q', { measures: M.MAX_MEASURES - 1 }), M.MAX_MEASURES).tune.measures, M.MAX_MEASURES);
+  assert.equal(M.setMeasures(tune('C4:q', { measures: M.MAX_MEASURES }), M.MAX_MEASURES + 1).tune.measures, M.MAX_MEASURES);
 });
 
 test('swap reorders neighbours', () => {

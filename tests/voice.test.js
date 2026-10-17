@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { encode, decode } from '../src/codec.js';
 import { planVoice, writeVoice, parseVoice, resolveVoice, MAX_VOICE_EVENTS } from '../src/voice.js';
+import { MAX_MEASURES } from '../src/model.js';
 import { tune, ODE } from './helpers.js';
 
 const syntax = ({ bit, end, ...op }) => op;        // an op without its position in the stream
@@ -65,7 +66,7 @@ test('stages hand over exactly what the next one expects', () => {
   const rnd = rng(7);
   for (let k = 0; k < 200; k++) {
     const key = rnd(15) - 7, clef = rnd(2) ? 'bass' : 'treble';
-    seams(randomEvents(rnd, 20 * 16), key, clef);
+    seams(randomEvents(rnd, MAX_MEASURES * 16), key, clef);
   }
 });
 
@@ -73,8 +74,8 @@ test('random tunes round-trip through links, with two staves and copies between 
   const rnd = rng(99);
   for (let k = 0; k < 150; k++) {
     const time = ['4/4', '3/4', '2/4', '6/8'][rnd(4)];
-    const cap = 20 * { '4/4': 16, '3/4': 12, '2/4': 8, '6/8': 12 }[time];
-    const t = { title: rnd(2) ? 'Tüne ♪ ' + k : '', bpm: 40 + rnd(201), key: rnd(15) - 7, clef: rnd(2) ? 'bass' : 'treble', time, measures: 20, events: randomEvents(rnd, cap) };
+    const cap = MAX_MEASURES * { '4/4': 16, '3/4': 12, '2/4': 8, '6/8': 12 }[time];
+    const t = { title: rnd(2) ? 'Tüne ♪ ' + k : '', bpm: 40 + rnd(201), key: rnd(15) - 7, clef: rnd(2) ? 'bass' : 'treble', time, measures: MAX_MEASURES, events: randomEvents(rnd, cap) };
     if (rnd(2)) {
       const two = rnd(3) === 0 ? t.events.map(e => e.rest ? e : { ...e, oct: e.oct - 1, ...(e.tones && { tones: e.tones.map(x => ({ ...x, oct: x.oct - 1 })) }) }) : randomEvents(rnd, cap);
       t.staff2 = { clef: rnd(2) ? 'bass' : 'treble', events: two.filter(e => e.rest || (e.oct >= 0 && (e.tones || []).every(x => x.oct >= 0))) };
@@ -176,8 +177,8 @@ test('link sizes stay small', () => {
 test('a link cut anywhere keeps a prefix of the notes', () => {
   const rnd = rng(3);
   for (let k = 0; k < 40; k++) {
-    const t = { ...tune('', { measures: 20 }), events: randomEvents(rnd, 20 * 16) };
-    t.staff2 = { clef: 'bass', events: randomEvents(rnd, 20 * 16) };
+    const t = { ...tune('', { measures: MAX_MEASURES }), events: randomEvents(rnd, MAX_MEASURES * 16) };
+    t.staff2 = { clef: 'bass', events: randomEvents(rnd, MAX_MEASURES * 16) };
     const link = encode(t);
     for (let n = 2; n < link.length; n += 1 + (n % 3)) {
       const r = decode('#' + link.slice(0, n));

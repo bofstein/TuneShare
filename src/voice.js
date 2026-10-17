@@ -5,8 +5,9 @@
 //   parseVoice   bytes → ops         (syntax only; lenient, never throws)
 //   resolveVoice ops → events        (pitches, durations, copies and shifts worked out)
 import { keyAlter } from './theory.js';
+import { MAX_MEASURES } from './model.js';
 
-export const MAX_VOICE_EVENTS = 320;     // 20 measures of 4/4 in 16ths
+export const MAX_VOICE_EVENTS = MAX_MEASURES * 16;   // every measure of 4/4 in 16ths
 const MAX_DIA = 69;                      // highest pitch the 12-bit v1 codes could hold, B9
 const SHAPE_CACHE = 8;
 const COPY_BITS_PER_EVENT = 8;           // a copy is only used if it is cheaper than this per event
