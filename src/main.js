@@ -286,7 +286,7 @@ function render() {
   const w = Math.max(280, host.clientWidth);
   const perSys = w >= 860 ? 4 : w >= 560 ? 3 : 2;
   const sp = w >= 560 ? 10 : 8;
-  lay = layout(tune(), { width: w, perSys, sp });
+  lay = layout(store.tune, { width: w, perSys, sp });   // every staff, not the active staff's view
   host.innerHTML = renderStaff(lay);
   paintClasses();
   paintOverlay();
@@ -745,7 +745,7 @@ $('sheetClose').onclick = closeSheet;
 $('sheet').onclick = e => { if (e.target === $('sheet')) closeSheet(); };
 
 // Debug overlay (Ctrl+D): live dump of the protobuf behind the URL
-function paintDebug() { $('debugDump').textContent = dumpFragment('#' + encode(tune())); }
+function paintDebug() { $('debugDump').textContent = dumpFragment('#' + encode(store.tune)); }
 function openDebug() { closeSheet(); paintDebug(); $('debug').hidden = false; $('debugDump').focus(); }
 function closeDebug() { $('debug').hidden = true; card.focus({ preventScroll: true }); }
 function toggleDebug() { $('debug').hidden ? openDebug() : closeDebug(); }

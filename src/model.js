@@ -149,8 +149,12 @@ export const staffCount = t => (t.staff2 ? 2 : 1);
 export const staffEvents = (t, s) => (s ? t.staff2.events : t.events);
 export const staffList = t => [{ clef: t.clef, events: t.events }, ...(t.staff2 ? [t.staff2] : [])];
 
-/** The tune as seen from staff s: header fields plus that staff's clef and events. */
-export const staffView = (t, s) => (s && t.staff2 ? { ...t, clef: t.staff2.clef, events: t.staff2.events } : t);
+/** The tune as seen from staff s: header fields plus that staff's clef and events, as a one-staff
+ *  tune (no staff2). Whole-tune code (layout, encode, playback) takes the tune itself, never a view. */
+export function staffView(t, s) {
+  const { staff2, ...header } = t;
+  return s && staff2 ? { ...header, clef: staff2.clef, events: staff2.events } : header;
+}
 
 /** Write a view (possibly with header changes) back into the tune as staff s. */
 export function withStaffView(t, s, view) {
