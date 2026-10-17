@@ -1,6 +1,7 @@
 // Tune → positioned drawing primitives + geometry for hit-testing. Pure, no DOM.
 // Rules: DESIGN.md, "Rendering and audio".
 import { BEAT_TICKS, CLEFS, TICKS_PER_MEASURE, keyAlter, spell, spellAligned, ticksOf } from './theory.js';
+import { pitchesOf } from './model.js';
 
 export const G = {
   gClef: '', fClef: '', nhW: '', nhH: '', nhB: '', dot: '',
@@ -56,21 +57,65 @@ export function beamGroups(pcs, beat) {
   return groups;
 }
 
-/** Written accidentals per measure, tracked by staff position. Sets p.acc on pieces. */
-export function assignAccidentals(pcs, key, bottom) {
+/** Noteheads of a note piece: one per pitch, sorted bottom to top. Sets p.heads, p.minPos, p.maxPos. */
+export function assignHeads(pcs, bottom) {
+  for (const p of pcs) {
+    if (p.rest) continue;
+    p.heads = pitchesOf(p.e)
+      .map((pp, t) => ({ ...pp, t, pos: pp.oct * 7 + pp.step - bottom }))
+      .sort((a, b) => a.pos - b.pos);
+    p.minPos = p.heads[0].pos;
+    p.maxPos = p.heads[p.heads.length - 1].pos;
+  }
+}
+
+/** Written accidentals per measure, tracked by staff position. Sets h.acc on heads. */
+export function assignAccidentals(pcs, key) {
   let curM = -1, state = new Map();
   for (const p of pcs) {
     if (p.m !== curM) { curM = p.m; state = new Map(); }
     if (p.rest || !p.first) continue;
-    const pos = p.e.oct * 7 + p.e.step - bottom;
-    const cur = state.has(pos) ? state.get(pos) : keyAlter(key, p.e.step);
-    if (p.e.alter !== cur) { p.acc = p.e.alter === 1 ? G.sharp : p.e.alter === -1 ? G.flat : G.nat; state.set(pos, p.e.alter); }
+    for (const h of p.heads) {
+      const cur = state.has(h.pos) ? state.get(h.pos) : keyAlter(key, h.step);
+      if (h.alter !== cur) { h.acc = h.alter === 1 ? G.sharp : h.alter === -1 ? G.flat : G.nat; state.set(h.pos, h.alter); }
+    }
   }
 }
 
+/** Accidental columns, top to bottom: an accidental joins the first column with no
+ *  accidental within a sixth of it. Sets h.col; returns the number of columns. */
+export function assignAccidentalColumns(heads) {
+  const cols = [];
+  for (const h of [...heads].reverse()) {
+    if (!h.acc) continue;
+    let c = cols.findIndex(col => col.every(pos => Math.abs(pos - h.pos) >= 6));
+    if (c < 0) { c = cols.length; cols.push([]); }
+    cols[c].push(h.pos);
+    h.col = c;
+  }
+  return cols.length;
+}
+
+/** Notes a second apart go on opposite sides of the stem. Sets h.side (−1 left, 0, 1 right). */
+export function assignSides(heads, up) {
+  heads.forEach(h => { h.side = 0; });
+  if (up) {
+    for (let i = 1; i < heads.length; i++) {
+      if (heads[i].pos - heads[i - 1].pos === 1 && heads[i - 1].side === 0) heads[i].side = 1;
+    }
+  } else {
+    for (let i = heads.length - 2; i >= 0; i--) {
+      if (heads[i + 1].pos - heads[i].pos === 1 && heads[i + 1].side === 0) heads[i].side = -1;
+    }
+  }
+}
+
+const hasSeconds = heads => heads.some((h, i) => i && h.pos - heads[i - 1].pos === 1);
+const stemUp = (minPos, maxPos) => maxPos - 4 <= 4 - minPos;
+
 /**
  * @returns {{width,height,sp,staff:Item[],events:Map<number,Item[]>,implicit:Item[],beams:Item[],geo}}
- * Item: {t:'glyph'|'line'|'rect'|'poly'|'path', cls, ...}
+ * Item: {t:'glyph'|'line'|'rect'|'poly'|'path'|'halo'|'text', cls, ...}
  */
 export function layout(tune, { width, perSys = 4, sp = 10 }) {
   const { pcs, empties, tpm, used } = buildPieces(tune);
@@ -87,12 +132,18 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
   const sysOf = m => Math.floor(m / perSys);
   const mX = m => { const k = sysOf(m); return hdrW(k) + (m - k * perSys) * mw(k); };
 
-  pcs.forEach(p => { if (!p.rest) p.pos = p.e.oct * 7 + p.e.step - clef.bottom; });
-  assignAccidentals(pcs, tune.key, clef.bottom);
+  assignHeads(pcs, clef.bottom);
+  assignAccidentals(pcs, tune.key);
 
-  // Time-proportional spacing plus a fixed allowance before notes showing an accidental.
+  // Time-proportional spacing plus a fixed allowance before notes showing accidentals
+  // (one per accidental column, plus a head width when a second pushes a head left).
   const pads = new Map();
-  for (const p of pcs) if (p.acc) { if (!pads.has(p.m)) pads.set(p.m, []); pads.get(p.m).push([p.tick, 1.1 * sp]); }
+  for (const p of pcs) {
+    if (p.rest) continue;
+    p.accCols = assignAccidentalColumns(p.heads);
+    const w = p.accCols * 1.1 * sp + (p.accCols && hasSeconds(p.heads) ? 1.18 * sp : 0);
+    if (w) { if (!pads.has(p.m)) pads.set(p.m, []); pads.get(p.m).push([p.tick, w]); }
+  }
   const tx = (m, tick, inclusive = true) => {
     const list = pads.get(m) || [];
     const total = list.reduce((a, [, w]) => a + w, 0);
@@ -128,33 +179,33 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     if (k > 0) staff.push({ t: 'text', x: 0.4 * sp, y: yB(k) - 5.3 * sp, text: String(mFirst + 1), cls: 'mnum' });
   }
 
-  // Note geometry
+  // Note geometry. p.x is the normal notehead column; the stem sits on its right (up) or left (down).
   for (const p of pcs) {
     p.k = sysOf(p.m); p.x = tx(p.m, p.tick);
     if (p.rest) continue;
-    p.y = Y(p.k, p.pos);
     p.hw = (p.ticks === 16 ? 1.688 : 1.18) * sp;
-    p.up = p.pos < 4;
+    p.up = stemUp(p.minPos, p.maxPos);
     p.hasStem = p.ticks !== 16;
   }
   const sx = p => (p.up ? p.x + p.hw - 0.06 * sp : p.x + 0.06 * sp);
+  const tipAnchor = p => Y(p.k, p.up ? p.maxPos : p.minPos);     // head the stem extends from
+  const stemBase = p => Y(p.k, p.up ? p.minPos : p.maxPos);      // head at the other end
   for (const p of pcs) {
-    if (!p.rest && p.hasStem) p.tip = p.up ? Math.min(p.y - 3.5 * sp, Y(p.k, 4)) : Math.max(p.y + 3.5 * sp, Y(p.k, 4));
+    if (!p.rest && p.hasStem) p.tip = p.up ? Math.min(tipAnchor(p) - 3.5 * sp, Y(p.k, 4)) : Math.max(tipAnchor(p) + 3.5 * sp, Y(p.k, 4));
   }
 
   // Beams
   for (const g of beamGroups(pcs, beat)) {
-    const maxP = Math.max(...g.map(p => p.pos)), minP = Math.min(...g.map(p => p.pos));
-    const up = maxP - 4 <= 4 - minP;
+    const up = stemUp(Math.min(...g.map(p => p.minPos)), Math.max(...g.map(p => p.maxPos)));
     g.forEach(p => { p.up = up; p.beamed = true; });
     const f = g[0], l = g[g.length - 1], x1 = sx(f), x2 = sx(l);
-    let t1 = f.y + (up ? -3.5 : 3.5) * sp;
-    const t2 = l.y + (up ? -3.5 : 3.5) * sp;
+    let t1 = tipAnchor(f) + (up ? -3.5 : 3.5) * sp;
+    const t2 = tipAnchor(l) + (up ? -3.5 : 3.5) * sp;
     const dy = Math.max(-sp, Math.min(sp, t2 - t1));
     const minLen = (g.some(p => p.ticks === 1) ? 3.25 : 3.0) * sp;
     let by = x => t1 + (dy * (x - x1)) / (x2 - x1 || 1);
     let shift = 0;
-    for (const p of g) { const b = by(sx(p)); shift = up ? Math.max(shift, b - (p.y - minLen)) : Math.max(shift, p.y + minLen - b); }
+    for (const p of g) { const b = by(sx(p)), a = tipAnchor(p); shift = up ? Math.max(shift, b - (a - minLen)) : Math.max(shift, a + minLen - b); }
     t1 += up ? -shift : shift;
     by = x => t1 + (dy * (x - x1)) / (x2 - x1 || 1);
     g.forEach(p => { p.tip = by(sx(p)); });
@@ -171,11 +222,12 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
       }
     });
   }
+  for (const p of pcs) if (!p.rest) assignSides(p.heads, p.up || !p.hasStem);
 
-  const ledgers = (k, x, w, pos) => {
+  const ledgers = (k, x1, x2, minPos, maxPos) => {
     const out = [];
-    for (let q = -2; q >= pos; q -= 2) out.push(line(x - 0.4 * sp, Y(k, q), x + w + 0.4 * sp, Y(k, q), 'ledger'));
-    for (let q = 10; q <= pos; q += 2) out.push(line(x - 0.4 * sp, Y(k, q), x + w + 0.4 * sp, Y(k, q), 'ledger'));
+    for (let q = -2; q >= minPos; q -= 2) out.push(line(x1 - 0.4 * sp, Y(k, q), x2 + 0.4 * sp, Y(k, q), 'ledger'));
+    for (let q = 10; q <= maxPos; q += 2) out.push(line(x1 - 0.4 * sp, Y(k, q), x2 + 0.4 * sp, Y(k, q), 'ledger'));
     return out;
   };
   const tieArc = (x1, x2, y, side) => {
@@ -183,37 +235,51 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     return { t: 'path', cls: 'ink', d: `M${f(x1)},${f(y)} Q${f(mx)},${f(y + h)} ${f(x2)},${f(y)} Q${f(mx)},${f(y + h - side * 0.28 * sp)} ${f(x1)},${f(y)}Z` };
   };
 
-  const hits = [];   // [{ev, x1, y1, x2, y2}] note/rest hit boxes
+  const hits = [];   // [{ev, tone, x1, y1, x2, y2}] note/rest hit boxes
   for (const p of pcs) {
     if (p.rest) {
       const pos = p.ticks === 16 ? 6 : 4;
       const items = [glyph(p.x, Y(p.k, pos), REST_GLYPH[p.ticks], p.implicit ? 'g faint' : 'g')];
       if ([3, 6, 12].includes(p.ticks)) items.push(glyph(p.x + 1.5 * sp, Y(p.k, 5), G.dot, p.implicit ? 'g faint' : 'g'));
       if (p.implicit) implicit.push(...items);
-      else { items.forEach(it => add(p.ev, it)); hits.push({ ev: p.ev, x1: p.x - 0.3 * sp, x2: p.x + 1.6 * sp, y1: Y(p.k, 8), y2: Y(p.k, 0) }); }
+      else { items.forEach(it => add(p.ev, it)); hits.push({ ev: p.ev, tone: 0, x1: p.x - 0.3 * sp, x2: p.x + 1.6 * sp, y1: Y(p.k, 8), y2: Y(p.k, 0) }); }
       continue;
     }
-    add(p.ev, { t: 'halo', x: p.x - 0.45 * sp, y: p.y - 0.95 * sp, w: p.hw + 0.9 * sp, h: 1.9 * sp });
-    ledgers(p.k, p.x, p.hw, p.pos).forEach(it => add(p.ev, it));
-    if (p.acc) add(p.ev, glyph(p.x - (p.acc === G.nat ? 0.95 : 1.25) * sp, p.y, p.acc));
-    add(p.ev, glyph(p.x, p.y, p.ticks === 16 ? G.nhW : p.ticks >= 8 ? G.nhH : G.nhB));
-    if ([3, 6, 12].includes(p.ticks)) add(p.ev, glyph(p.x + p.hw + 0.35 * sp, p.pos % 2 === 0 ? p.y - sp / 2 : p.y, G.dot));
+    const hx = h => p.x + h.side * p.hw;
+    const xs = p.heads.map(hx), left = Math.min(...xs), right = Math.max(...xs) + p.hw;
+    for (const h of p.heads) {
+      const y = Y(p.k, h.pos);
+      add(p.ev, { t: 'halo', tone: h.t, x: hx(h) - 0.45 * sp, y: y - 0.95 * sp, w: p.hw + 0.9 * sp, h: 1.9 * sp });
+    }
+    ledgers(p.k, left, right, p.minPos, p.maxPos).forEach(it => add(p.ev, it));
+    for (const h of p.heads) {
+      const y = Y(p.k, h.pos);
+      if (h.acc) add(p.ev, glyph(left - (h.acc === G.nat ? 0.95 : 1.25) * sp - h.col * 1.1 * sp, y, h.acc));
+      add(p.ev, glyph(hx(h), y, p.ticks === 16 ? G.nhW : p.ticks >= 8 ? G.nhH : G.nhB));
+      if ([3, 6, 12].includes(p.ticks)) add(p.ev, glyph(right + 0.35 * sp, h.pos % 2 === 0 ? y - sp / 2 : y, G.dot));
+      hits.push({ ev: p.ev, tone: h.t, x1: hx(h) - 0.4 * sp, x2: hx(h) + p.hw + 0.4 * sp, y1: y - sp / 2, y2: y + sp / 2 });
+    }
     if (p.hasStem) {
-      add(p.ev, line(sx(p), p.y + (p.up ? -0.15 : 0.15) * sp, sx(p), p.tip, 'stem'));
+      add(p.ev, line(sx(p), stemBase(p) + (p.up ? -0.15 : 0.15) * sp, sx(p), p.tip, 'stem'));
       if (!p.beamed && [1, 2, 3].includes(p.ticks)) {
         const fl = p.ticks === 1 ? (p.up ? G.f16u : G.f16d) : p.up ? G.f8u : G.f8d;
         add(p.ev, glyph(sx(p) - 0.06 * sp, p.tip, fl));
       }
     }
     if (p.tieTo) {
-      const q = p.tieTo, side = p.up ? 1 : -1, y = p.y + side * 0.62 * sp;
-      if (q.k === p.k) add(p.ev, tieArc(p.x + p.hw + 0.12 * sp, q.x - 0.12 * sp, y, side));
-      else {
-        add(p.ev, tieArc(p.x + p.hw + 0.12 * sp, systems[p.k].xEnd - 0.3 * sp, y, side));
-        add(q.ev, tieArc(q.x - 2.4 * sp, q.x - 0.12 * sp, q.y + side * 0.62 * sp, side));
-      }
+      const q = p.tieTo, n = p.heads.length;
+      p.heads.forEach((h, i) => {
+        const side = n === 1 ? (p.up ? 1 : -1) : i >= n / 2 ? -1 : 1;     // upper notes tie above, lower below
+        const qh = q.heads.find(o => o.t === h.t) || q.heads[i];
+        const y = Y(p.k, h.pos) + side * 0.62 * sp;
+        if (q.k === p.k) add(p.ev, tieArc(right + 0.12 * sp, q.x + qh.side * q.hw - 0.12 * sp, y, side));
+        else {
+          add(p.ev, tieArc(right + 0.12 * sp, systems[p.k].xEnd - 0.3 * sp, y, side));
+          const qx = q.x + qh.side * q.hw;
+          add(q.ev, tieArc(qx - 2.4 * sp, qx - 0.12 * sp, Y(q.k, qh.pos) + side * 0.62 * sp, side));
+        }
+      });
     }
-    hits.push({ ev: p.ev, x1: p.x - 0.4 * sp, x2: p.x + p.hw + 0.4 * sp, y1: p.y - 0.9 * sp, y2: p.y + 0.9 * sp });
   }
   for (const m of empties) {
     const k = sysOf(m);
@@ -237,16 +303,22 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
       const pos = Math.round((yB(k) - y) / (sp / 2));
       return { k, m, tick: best, abs: m * tpm + best, pos };
     },
+    /** → {ev, tone} for the notehead or rest under the pointer, or null. */
     hitEvent(x, y) {
-      for (const h of hits) if (x >= h.x1 && x <= h.x2 && y >= h.y1 && y <= h.y2) return h.ev;
-      return -1;
+      for (const h of hits) if (x >= h.x1 && x <= h.x2 && y >= h.y1 && y <= h.y2) return { ev: h.ev, tone: h.tone };
+      return null;
     },
     /** Absolute tick → x/k (for drawing the insert marker before the event starting there). */
     slotX(abs) {
       const m = Math.min(Math.floor(abs / tpm), tune.measures - 1), tick = abs - m * tpm;
       return { k: sysOf(m), x: tx(m, tick, false) - (tick ? 0.9 : 0.7) * sp };
     },
-    eventBox(i) { const h = hits.find(b => b.ev === i); return h ? { ...h, k: Math.floor(h.y1 / sysH) } : null; },
+    /** Horizontal extent of an event's first piece: {k, x1, x2}. */
+    eventSpan(i) {
+      const p = pcs.find(q => q.ev === i);
+      if (!p) return null;
+      return { k: p.k, x1: p.x - (p.hw || sp), x2: p.x + 2 * (p.hw || sp) };
+    },
   };
 
   return { width, height: sysN * sysH + 0.6 * sp, sp, staff, events, implicit, beams, geo };

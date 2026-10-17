@@ -67,5 +67,6 @@ export class Store {
     const hash = '#' + encode(this.tune);
     this.lastHash = hash;
     if (location.hash !== hash) history.replaceState(null, '', hash);
+    this.onUrl?.(location.href.length);
   }
 }

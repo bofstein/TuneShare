@@ -1,6 +1,6 @@
 // Web Audio synth voice and scheduler. See DESIGN.md.
 import { freqOf, midiOf, ticksOf } from './theory.js';
-import { used } from './model.js';
+import { pitchesOf, used } from './model.js';
 
 let ctx = null, master = null;
 
@@ -20,7 +20,7 @@ function ensure() {
 }
 
 /** Schedule one note; returns a handle that can be cut short. */
-function voice(midi, start, dur) {
+function voice(midi, start, dur, level = 1) {
   const f = freqOf(midi);
   const env = ctx.createGain();
   env.gain.setValueAtTime(0, start);
@@ -29,7 +29,9 @@ function voice(midi, start, dur) {
   const end = start + Math.max(dur, 0.06);
   env.gain.setValueAtTime(0.6, end);
   env.gain.linearRampToValueAtTime(0, end + 0.08);
-  env.connect(master.input);
+  const lvl = ctx.createGain();
+  lvl.gain.value = level;
+  env.connect(lvl); lvl.connect(master.input);
   const oscs = [['triangle', f, 1], ['sine', f * 2, 0.15]].map(([type, freq, gain]) => {
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.type = type; o.frequency.value = freq; g.gain.value = gain;
@@ -47,9 +49,16 @@ function voice(midi, start, dur) {
   };
 }
 
-export function preview(pitch) {
-  try { const c = ensure(); voice(midiOf(pitch), c.currentTime + 0.01, 0.35); } catch {}
+/** Sound one or more pitches together (a note or a chord). */
+export function preview(...pitches) {
+  try {
+    const c = ensure(), level = chordLevel(pitches.length);
+    pitches.forEach(p => voice(midiOf(p), c.currentTime + 0.01, 0.35, level));
+  } catch {}
 }
+
+// Keep chords from clipping: total loudness grows slowly with the number of notes.
+const chordLevel = n => 1 / Math.sqrt(n);
 
 export class Player {
   constructor() { this.playing = false; this.voices = []; }
@@ -75,7 +84,8 @@ export class Player {
         const len = ticksOf(e);
         if (i >= fromIdx) {
           const t0 = startTime + t * secPerTick, d = len * secPerTick;
-          if (!e.rest) this.voices.push(voice(midiOf(e), t0, d * 0.92));
+          const ps = pitchesOf(e), level = chordLevel(ps.length);
+          ps.forEach(p => this.voices.push(voice(midiOf(p), t0, d * 0.92, level)));
           schedule.push({ i, t0, t1: t0 + d });
         }
         if (i >= fromIdx) t += len;

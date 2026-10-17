@@ -75,3 +75,31 @@ test('out-of-range header values are clamped', () => {
   assert.equal(r.tune.measures, 12);
   assert.equal(r.repaired, true);
 });
+
+test('chords round-trip and leave the note list unchanged', () => {
+  const t = tune('C4:q D4:h E4:q');
+  t.events[0].tones = [{ step: 2, oct: 4, alter: 0 }, { step: 4, oct: 4, alter: 1 }];
+  t.events[2].tones = [{ step: 0, oct: 5, alter: -1 }];
+  const enc = encode(t);
+  assert.deepEqual(decode('#' + enc).tune, t);
+  // An app without chord support only reads field 7, which is identical to the chord-free encoding.
+  const plain = encode(tune('C4:q D4:h E4:q'));
+  assert.ok(enc.length > plain.length);
+  const bare = decode('#' + plain).tune.events;
+  assert.deepEqual(decode('#' + enc).tune.events.map(({ tones, ...e }) => e), bare);
+});
+
+test('chords are not capped by the format', () => {
+  const t = tune('C4:w');
+  t.events[0].tones = ['D', 'E', 'F', 'G', 'A', 'B'].map((_, i) => ({ step: (i + 1) % 7, oct: 4, alter: 0 }))
+    .concat([{ step: 0, oct: 5, alter: 0 }, { step: 1, oct: 5, alter: 0 }]);
+  assert.equal(decode('#' + encode(t)).tune.events[0].tones.length, 8);
+});
+
+test('chord entries for rests or missing events are dropped as repairs', () => {
+  const t = tune('r:q C4:q');
+  t.events[1].tones = [{ step: 2, oct: 4, alter: 0 }];
+  const r = decode('#' + encode(t));
+  assert.equal(r.repaired, false);
+  assert.equal(r.tune.events[1].tones.length, 1);
+});

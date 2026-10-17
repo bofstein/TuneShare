@@ -10,8 +10,10 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
    There is no backend, no account and no storage that a link depends on.
 2. **Old links never break.** The URL format only grows. Changes add new
    fields, and existing fields keep their meaning (see [URL format](#url-format-v1)).
-3. **Simple over complete.** TuneShare is a tool for sharing a melody, not a
-   notation suite. When a feature competes with clarity, clarity wins.
+3. **Simple over complete.** TuneShare is a tool for sharing short music, not
+   a notation suite. When a feature competes with clarity, clarity wins.
+   Richer music (chords, a second staff) is welcome as long as a first-time
+   user can still enter a plain melody without meeting it.
 4. **No build, no dependencies.** Plain HTML, CSS and native ES modules,
    served as-is by GitHub Pages. Tests use Node's built-in `node:test`.
 5. **Edits never destroy work silently.** An edit that would lose notes is
@@ -21,7 +23,9 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 
 | In | Out (for now) |
 | --- | --- |
-| One voice, one staff, up to 12 measures | Chords, multiple voices or staves, lyrics |
+| Up to 12 measures | Lyrics; independent rhythms within one staff |
+| Chords: up to 6 notes of the same length (an app limit, not a format limit) | Chords whose notes have different lengths |
+| A second staff (planned: [#4](https://github.com/bofstein/TuneShare/issues/4)) | More than two staves |
 | Treble and bass clef; all 15 key signatures | Changing key, clef or tempo partway through |
 | 2/4, 3/4, 4/4, 6/8 | Other time signatures (they can be added later without breaking links) |
 | Whole to 16th notes; dotted half, quarter and 8th; rests | Triplets, 32nds, dotted 16ths, user-entered ties and slurs |
@@ -39,6 +43,11 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 - **Capacity** = measures × ticks per measure. The events fill the timeline
   from the start, and anything after them is implicit silence, which is
   drawn as faint rests and never stored.
+- **Chords:** a note event may carry extra pitches (`tones`) that share its
+  length, so chords don't change any timing rule. The main pitch is the one
+  entered first. The limit, `MAX_CHORD_NOTES` in `src/model.js` (6), is an
+  editor setting: the URL format allows any number, so the limit can be
+  raised without breaking links. Two notes can't share a line or space.
 - **Pitch is stored as the sounding pitch**: letter + octave + alteration
   (−1/0/+1). Written accidentals are worked out per measure when drawing.
   This means a note keeps its pitch when edits move it to another measure,
@@ -85,6 +94,14 @@ https://bofstein.github.io/TuneShare/#1.<base64url payload>
   Codes 211–511 are reserved.
 - Duration codes: 0 = 16th, 1 = 8th, 2 = quarter, 3 = half, 4 = whole,
   5 = dotted 8th, 6 = dotted quarter, 7 = dotted half.
+- **Chords** are field 8: `repeated Chord { uint32 index = 1; bytes tones = 2; }`.
+  `index` is the event's position in the note list, and `tones` holds its
+  extra pitches as 12-bit pitch codes (packed like the notes, duration bits
+  zero). There is no limit on tones per chord. A reader that doesn't know
+  field 8 skips it and shows each chord's main pitch, so the note list
+  (field 7) never changes meaning.
+- **Link length:** the app warns once when a link passes 2,000 characters,
+  roughly what chat apps, email and QR codes handle reliably.
 - **The decoder is lenient.** A damaged or truncated link still opens, keeping
   every complete note, and the app shows a "this link was damaged" toast.
 
@@ -109,15 +126,19 @@ breaks lenient decoding of truncated links.
   - `src/layout.js` (pure) turns a tune into positioned shapes plus hit-test
     geometry: splitting at bar lines, ties, beams, accidentals and spacing.
   - `src/render.js` turns that into SVG markup.
+- **Chords** stack on one stem. Notes a second apart sit on opposite sides of
+  the stem, accidentals stagger into columns (a column holds accidentals at
+  least a sixth apart), and a tied chord ties every note.
 - **Spacing is time-proportional**, plus a fixed allowance in front of each
-  note that shows an accidental. Pointer position therefore maps directly to
+  note for every accidental column it needs. Pointer position therefore maps directly to
   ticks, and the layout doesn't jump while you edit.
 - **Music glyphs** come from a 34-glyph subset of Bravura (SIL OFL 1.1), about
   9 KB. The OFL reserves the name "Bravura" for the unmodified font, so the
   subset is renamed "TuneShare Glyphs". The licence is in
   `assets/fonts/OFL-Bravura.txt`.
 - **Sound** is synthesised with the Web Audio API: two oscillators, an envelope
-  and a low-pass filter. There are no samples. Playback is scheduled against
+  and a low-pass filter. There are no samples. Each note of a chord plays at
+  1/√n volume, so chords don't clip. Playback is scheduled against
   the audio clock, and highlighting follows that same clock.
 
 ## UI principles
@@ -129,6 +150,8 @@ breaks lenient decoding of truncated links.
 - **Every action has a keyboard shortcut**, shown on the button or in its
   tooltip, and listed in the shortcut sheet (`?`). Letters are pitches,
   `1`–`5` are lengths (whole → 16th), and arrows move or change pitch.
+  `Shift`+letter adds a note to the selected chord, and `Tab` moves between
+  its notes.
 - **Colours have fixed meanings:** the selection is indigo, the note playing
   is amber, and warnings are amber with a ⚠ icon. Colour is never the only
   signal. Light and dark themes follow the system setting.

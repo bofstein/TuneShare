@@ -96,3 +96,43 @@ export function setTime(tune, time) {
   if (needed > MAX_MEASURES) return { error: ERR_FULL };
   return { tune: { ...tune, time, measures: needed }, expanded: needed !== tune.measures ? needed : 0 };
 }
+
+// ---------- chords ----------
+// A note event may carry extra simultaneous pitches in `tones` (same length).
+// The URL format has no limit; this is the editor's limit and can be raised freely.
+export const MAX_CHORD_NOTES = 6;
+
+const pitchOnly = p => ({ step: p.step, oct: p.oct, alter: p.alter });
+export const pitchesOf = e => (e.rest ? [] : [pitchOnly(e), ...(e.tones || [])]);
+const sameLine = (a, b) => a.oct * 7 + a.step === b.oct * 7 + b.step;
+
+/** Build a note event from a list of pitches (first = main), dropping empty `tones`. */
+export function withPitches(e, pitches) {
+  const [main, ...rest] = pitches;
+  const out = { dur: e.dur, ...pitchOnly(main) };
+  if (rest.length) out.tones = rest.map(pitchOnly);
+  return out;
+}
+
+export function addTone(tune, i, pitch) {
+  const e = tune.events[i];
+  if (!e || e.rest) return { error: 'not-a-note' };
+  const ps = pitchesOf(e);
+  if (ps.length >= MAX_CHORD_NOTES) return { error: 'chord-full' };
+  if (ps.some(p => sameLine(p, pitch))) return { error: 'duplicate' };
+  return replace(tune, i, withPitches(e, [...ps, pitch]));
+}
+
+/** Remove tone t (0 = main pitch). The next tone becomes the main pitch. */
+export function removeTone(tune, i, t) {
+  const e = tune.events[i], ps = pitchesOf(e);
+  if (ps.length <= 1) return remove(tune, i);
+  return replace(tune, i, withPitches(e, ps.filter((_, k) => k !== t)));
+}
+
+export function setTonePitch(tune, i, t, pitch) {
+  const e = tune.events[i], ps = pitchesOf(e);
+  if (ps.some((p, k) => k !== t && sameLine(p, pitch))) return { error: 'duplicate' };
+  ps[t] = pitch;
+  return replace(tune, i, withPitches(e, ps));
+}

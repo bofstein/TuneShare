@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPieces, beamGroups, assignAccidentals, layout, G } from '../src/layout.js';
+import { buildPieces, beamGroups, assignHeads, assignAccidentals, assignAccidentalColumns, assignSides, layout, G } from '../src/layout.js';
 import { tune } from './helpers.js';
 
 test('half note on beat 4 splits into tied quarters', () => {
@@ -36,8 +36,9 @@ test('rests break beams', () => {
 test('accidentals follow key and measure state', () => {
   // G major: F# needs no sign, F natural does; repeat in same bar needs none; next bar resets.
   const { pcs } = buildPieces(tune('F#4:q F4:q F4:q C#5:q | F4:q', { key: 1 }));
-  assignAccidentals(pcs, 1, 30);
-  assert.deepEqual(pcs.filter(p => !p.rest).map(p => p.acc ?? null), [null, G.nat, null, G.sharp, G.nat]);
+  assignHeads(pcs, 30);
+  assignAccidentals(pcs, 1);
+  assert.deepEqual(pcs.filter(p => !p.rest).map(p => p.heads[0].acc ?? null), [null, G.nat, null, G.sharp, G.nat]);
 });
 
 test('layout locate maps back to ticks', () => {
@@ -45,4 +46,38 @@ test('layout locate maps back to ticks', () => {
   const x = lay.geo.tx(1, 8);
   const loc = lay.geo.locate(x, lay.geo.Y(0, 4));
   assert.equal(loc.m, 1); assert.equal(loc.tick, 8); assert.equal(loc.pos, 4);
+});
+
+const chord = (src, ...tones) => {
+  const t = tune(src);
+  t.events[0].tones = tones.map(x => { const m = x.match(/^([A-G])([#b]?)(\d)$/); return { step: 'CDEFGAB'.indexOf(m[1]), oct: +m[3], alter: m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0 }; });
+  return t;
+};
+
+test('chord heads are sorted bottom to top with tone indices kept', () => {
+  const { pcs } = buildPieces(chord('G4:q', 'C4', 'E4'));
+  assignHeads(pcs, 30);
+  assert.deepEqual(pcs[0].heads.map(h => [h.pos, h.t]), [[-2, 1], [0, 2], [2, 0]]);
+});
+
+test('seconds sit on opposite sides of the stem', () => {
+  const heads = [{ pos: 0 }, { pos: 1 }, { pos: 2 }];
+  assignSides(heads, true);
+  assert.deepEqual(heads.map(h => h.side), [0, 1, 0]);
+  assignSides(heads, false);
+  assert.deepEqual(heads.map(h => h.side), [0, -1, 0]);
+});
+
+test('accidentals closer than a sixth go in separate columns', () => {
+  const heads = [{ pos: 0, acc: 'x' }, { pos: 2, acc: 'x' }, { pos: 8, acc: 'x' }];
+  assert.equal(assignAccidentalColumns(heads), 2);
+  assert.deepEqual(heads.map(h => h.col), [1, 0, 0]);   // placed top-down: 8 and 2 share a column
+});
+
+test('a tied chord ties every tone', () => {
+  const t = tune('C4:q C4:q C4:q E4:h');
+  t.events[3].tones = [{ step: 4, oct: 4, alter: 0 }];
+  const lay = layout(t, { width: 1000 });
+  const ties = [...lay.events.get(3)].filter(i => i.t === 'path');
+  assert.equal(ties.length, 2);
 });
