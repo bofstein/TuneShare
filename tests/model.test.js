@@ -99,6 +99,7 @@ test('staves: add, view, write back, and remove only when empty', () => {
   assert.deepEqual(back.staff2, { clef: 'bass', events: parse('C3:h') });
   assert.equal(back.key, 2);
   assert.equal(M.removeStaff(back, 1).error, 'staff-not-empty');
+  assert.equal(M.removeStaff(back, 1, true).tune.staff2, undefined);
   // Removing an empty first staff promotes the second one.
   const promoted = M.removeStaff(M.withStaffView(back, 0, { ...back, events: parse('r:q') }), 0).tune;
   assert.deepEqual(promoted.events, parse('C3:h'));

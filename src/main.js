@@ -77,7 +77,7 @@ function warnFull() {
 const ERRORS = {
   'chord-full': ['Chord is full', `Chords can have up to ${M.MAX_CHORD_NOTES} notes.`],
   duplicate: ['Already in the chord', 'That line or space already has a note in this chord.'],
-  'staff-not-empty': ["The lower staff isn't empty", 'Delete its notes first.'],
+  'staff-not-empty': ["The lower staff isn't empty", 'Delete its notes first, or delete them all now.'],
 };
 /** Commit an edit made on the view of staff s (default: the active staff). */
 function apply(result, cursor, sound, s = staffIdx()) {
@@ -255,7 +255,11 @@ function switchStaff(dir) {
 function setStaves(n) {
   if (n === M.staffCount(store.tune)) return;
   if (n === 2) { applyWhole(M.addStaff(store.tune), { type: 'caret', index: 0, staff: 1 }); return; }
-  applyWhole(M.removeStaff(store.tune, 1), { type: 'caret', index: store.tune.events.length, staff: 0 });
+  const r = M.removeStaff(store.tune, 1);
+  if (r.error !== 'staff-not-empty') { applyWhole(r, { type: 'caret', index: store.tune.events.length, staff: 0 }); return; }
+  toast({ kind: 'warn', title: ERRORS[r.error][0], body: ERRORS[r.error][1], ms: 6000,
+    action: 'Delete lower staff notes',
+    onAction: () => applyWhole(M.removeStaff(store.tune, 1, true), { type: 'caret', index: store.tune.events.length, staff: 0 }) });
 }
 
 function edit(fn) { return () => { stopPlayback(); fn(); }; }

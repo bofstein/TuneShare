@@ -166,10 +166,10 @@ export function addStaff(t) {
   return { tune: { ...t, staff2: { clef: t.clef === 'bass' ? 'treble' : 'bass', events: [] } } };
 }
 
-/** Remove staff s. Only a staff holding nothing but rests can be removed. */
-export function removeStaff(t, s) {
+/** Remove staff s. Only a staff holding nothing but rests can be removed, unless `discard` is set. */
+export function removeStaff(t, s, discard = false) {
   if (!t.staff2) return { tune: t };
-  if (!restsOnly(staffEvents(t, s))) return { error: 'staff-not-empty' };
+  if (!discard && !restsOnly(staffEvents(t, s))) return { error: 'staff-not-empty' };
   const { staff2, ...rest } = t;
   return { tune: s ? rest : { ...rest, clef: staff2.clef, events: staff2.events } };
 }
