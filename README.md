@@ -18,11 +18,11 @@ Plain HTML, CSS and ES modules: no build step and no dependencies.
 
 ```sh
 python3 -m http.server     # then open http://localhost:8000
-npm test                   # unit tests (node:test)
+npm test                   # unit tests
 ```
 
-GitHub Pages serves the repository root as-is. Design notes are kept
-locally in `context/`, which is gitignored.
+See [DESIGN.md](DESIGN.md) for the design principles, the URL format, the
+code layout and the development guide.
 
 Music glyphs: a subset of [Bravura](https://github.com/steinbergmedia/bravura)
 (SIL Open Font License 1.1), renamed "TuneShare Glyphs" as the licence
