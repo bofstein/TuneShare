@@ -1,6 +1,6 @@
 // Web Audio synth voice and scheduler. See DESIGN.md.
 import { freqOf, midiOf, ticksOf } from './theory.js';
-import { pitchesOf, used } from './model.js';
+import { pitchesOf, staffList, used } from './model.js';
 
 let ctx = null, master = null;
 
@@ -64,41 +64,49 @@ export class Player {
   constructor() { this.playing = false; this.voices = []; }
 
   /**
+   * Plays every staff together.
    * @param tune
-   * @param from event index to start at
-   * @param opts {{loop:boolean, onEvent:(i:number)=>void, onEnd:()=>void}}
+   * @param from tick to start at
+   * @param opts {{loop:()=>boolean, onEvent:(keys:string[])=>void, onEnd:()=>void}}
+   *   onEvent gets the "staff:index" keys of the events sounding now (empty when none).
    */
   play(tune, from, { loop, onEvent, onEnd }) {
     this.stop();
     const c = ensure();
     const secPerTick = 60 / tune.bpm / 4;
     const mt = { '2/4': 8, '3/4': 12, '4/4': 16, '6/8': 12 }[tune.time];
-    const contentEnd = used(tune.events);
-    if (!contentEnd) { onEnd(); return; }
+    const staves = staffList(tune);
+    const contentEnd = Math.max(...staves.map(st => used(st.events)));
+    if (!contentEnd || from >= contentEnd) { onEnd(); return; }
     const loopTicks = Math.ceil(contentEnd / mt) * mt;
     this.playing = true;
-    const schedule = [];   // [{i, t0, t1}] in seconds (context time)
-    const pass = (startTime, fromIdx) => {
-      let t = 0;
-      tune.events.forEach((e, i) => {
-        const len = ticksOf(e);
-        if (i >= fromIdx) {
-          const t0 = startTime + t * secPerTick, d = len * secPerTick;
-          const ps = pitchesOf(e), level = chordLevel(ps.length);
-          ps.forEach(p => this.voices.push(voice(midiOf(p), t0, d * 0.92, level)));
-          schedule.push({ i, t0, t1: t0 + d });
-        }
-        if (i >= fromIdx) t += len;
+    const schedule = [];   // [{key, t0, t1}] in seconds (context time)
+    const pass = (startTime, fromTick) => {
+      staves.forEach((st, s) => {
+        let t = 0;
+        st.events.forEach((e, i) => {
+          const len = ticksOf(e);
+          // A note already sounding at the start tick is skipped, like a note before it.
+          if (t >= fromTick) {
+            const t0 = startTime + (t - fromTick) * secPerTick, d = len * secPerTick;
+            const ps = pitchesOf(e), level = chordLevel(ps.length);
+            ps.forEach(p => this.voices.push(voice(midiOf(p), t0, d * 0.92, level)));
+            schedule.push({ key: `${s}:${i}`, t0, t1: t0 + d });
+          }
+          t += len;
+        });
       });
-      return startTime + (fromIdx === 0 ? loopTicks : t) * secPerTick;
+      schedule.sort((x, y) => x.t1 - y.t1);
+      return startTime + (fromTick === 0 ? loopTicks : contentEnd - fromTick) * secPerTick;
     };
     let passEnd = pass(c.currentTime + 0.05, from);
+    let last = '';
     const tickLoop = () => {
       if (!this.playing) return;
       const now = c.currentTime;
       if (loop() && now > passEnd - 0.25) passEnd = pass(passEnd, 0);
-      const cur = schedule.find(s => now >= s.t0 && now < s.t1);
-      onEvent(cur ? cur.i : -1);
+      const keys = schedule.filter(s => now >= s.t0 && now < s.t1).map(s => s.key);
+      if (keys.join() !== last) { last = keys.join(); onEvent(keys); }
       if (now >= passEnd && !loop()) { this.stop(); onEnd(); return; }
       while (schedule.length && schedule[0].t1 < now - 1) schedule.shift();
       this.raf = requestAnimationFrame(tickLoop);

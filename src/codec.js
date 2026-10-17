@@ -67,9 +67,28 @@ export function codeEvent(c) {
   return { dur, step: d % 7, oct: Math.floor(d / 7), alter: ((pc - 1) % 3) - 1 };
 }
 
+function writeVarint(o, n) { while (n > 127) { o.push((n & 127) | 128); n >>>= 7; } o.push(n); }
+
+/** Packed events in field `evField`, then one Chord sub-message per chord in field `chordField`. */
+function writeVoice(o, events, evField, chordField) {
+  if (events.length) {
+    const p = pack12(events.map(eventCode));
+    writeVarint(o, (evField << 3) | 2); writeVarint(o, p.length); o.push(...p);
+  }
+  // Chord { uint32 index = 1; bytes tones = 2; } — extra pitches per event.
+  events.forEach((e, index) => {
+    if (e.rest || !e.tones?.length) return;
+    const sub = [];
+    if (index) { writeVarint(sub, 1 << 3); writeVarint(sub, index); }
+    const tones = pack12(e.tones.map(pitchCode));
+    writeVarint(sub, (2 << 3) | 2); writeVarint(sub, tones.length); sub.push(...tones);
+    writeVarint(o, (chordField << 3) | 2); writeVarint(o, sub.length); o.push(...sub);
+  });
+}
+
 export function encode(t) {
   const o = [];
-  const varint = n => { while (n > 127) { o.push((n & 127) | 128); n >>>= 7; } o.push(n); };
+  const varint = n => writeVarint(o, n);
   const tag = (field, wire) => varint((field << 3) | wire);
   if (t.title) { const b = new TextEncoder().encode(t.title); tag(1, 2); varint(b.length); o.push(...b); }
   if (t.bpm !== 100) { tag(2, 0); varint(t.bpm); }
@@ -78,20 +97,15 @@ export function encode(t) {
   const ti = TIMES.indexOf(t.time);
   if (ti > 0) { tag(5, 0); varint(ti); }
   if (t.measures !== 4) { tag(6, 0); varint(t.measures); }
-  if (t.events.length) {
-    const p = pack12(t.events.map(eventCode));
-    tag(7, 2); varint(p.length); o.push(...p);
-  }
-  // Field 8: repeated Chord { uint32 index = 1; bytes tones = 2; } — extra pitches per event.
-  t.events.forEach((e, index) => {
-    if (e.rest || !e.tones?.length) return;
+  writeVoice(o, t.events, 7, 8);
+  // Field 9: Staff staff2 = 9 { Clef clef = 1; bytes events = 2; repeated Chord chords = 3; }.
+  // Its presence (even empty) means the tune has a second staff.
+  if (t.staff2) {
     const sub = [];
-    const sv = n => { while (n > 127) { sub.push((n & 127) | 128); n >>>= 7; } sub.push(n); };
-    if (index) { sv(1 << 3); sv(index); }
-    const tones = pack12(e.tones.map(pitchCode));
-    sv((2 << 3) | 2); sv(tones.length); sub.push(...tones);
-    tag(8, 2); varint(sub.length); o.push(...sub);
-  });
+    if (t.staff2.clef === 'bass') { writeVarint(sub, 1 << 3); writeVarint(sub, 1); }
+    writeVoice(sub, t.staff2.events, 2, 3);
+    tag(9, 2); varint(sub.length); o.push(...sub);
+  }
   return `${VERSION}.${toB64(o)}`;
 }
 
@@ -127,6 +141,7 @@ export function decode(fragment) {
   };
   let eventBytes = [];
   const chordChunks = [];
+  let staff2Chunk = null;
   try {
     while (i < bytes.length) {
       const key = varint(), field = Math.floor(key / 8), wire = key & 7;
@@ -145,20 +160,41 @@ export function decode(fragment) {
         if (field === 1) tune.title = new TextDecoder().decode(new Uint8Array(chunk)).slice(0, 60);
         else if (field === 7) eventBytes = chunk;
         else if (field === 8) chordChunks.push(chunk);
+        else if (field === 9) staff2Chunk = chunk;
       } else if (wire === 1) i += 8;
       else if (wire === 5) i += 4;
       else { repaired = true; break; }
     }
   } catch { repaired = true; }
 
-  const indexMap = [];          // raw event position → index in tune.events (skipped codes shift it)
+  const cap = capacity(tune);
+  const voice = readVoice(eventBytes, chordChunks, cap);
+  tune.events = voice.events;
+  if (voice.repaired) repaired = true;
+  if (staff2Chunk) {
+    const st = decodeStaff(staff2Chunk);
+    if (!st) { repaired = true; tune.staff2 = { clef: 'treble', events: [] }; }
+    else {
+      const v2 = readVoice(st.eventBytes, st.chordChunks, cap);
+      tune.staff2 = { clef: st.clef, events: v2.events };
+      if (v2.repaired) repaired = true;
+    }
+  }
+  return { tune, repaired, newer };
+}
+
+/** Events (field 7 style) plus their chord tones; trimmed to `cap`. */
+function readVoice(eventBytes, chordChunks, cap) {
+  const events = [];
+  let repaired = false;
+  const indexMap = [];          // raw event position → index in events (skipped codes shift it)
   unpack12(eventBytes).forEach(c => {
     const e = codeEvent(c);
-    if (e) { indexMap.push(tune.events.length); tune.events.push(e); } else { indexMap.push(-1); repaired = true; }
+    if (e) { indexMap.push(events.length); events.push(e); } else { indexMap.push(-1); repaired = true; }
   });
   for (const chunk of chordChunks) {
     const ch = decodeChord(chunk);
-    const e = tune.events[indexMap[ch?.index] ?? -1];
+    const e = events[indexMap[ch?.index] ?? -1];
     if (!ch || !e || e.rest) { repaired = true; continue; }
     const seen = new Set([e.oct * 7 + e.step]);
     const tones = [];
@@ -170,11 +206,31 @@ export function decode(fragment) {
     }
     if (tones.length) e.tones = [...(e.tones || []), ...tones];
   }
-  const before = tune.events.length;
-  tune.events.forEach(e => { if (e.tones && !e.tones.length) delete e.tones; });
-  tune.events = trimToCapacity(tune.events, capacity(tune));
-  if (tune.events.length !== before) repaired = true;
-  return { tune, repaired, newer };
+  const trimmed = trimToCapacity(events, cap);
+  if (trimmed.length !== events.length) repaired = true;
+  return { events: trimmed, repaired };
+}
+
+/** Decode the Staff sub-message (field 9); returns null if malformed. */
+function decodeStaff(bytes) {
+  let i = 0, clef = 'treble', eventBytes = [];
+  const chordChunks = [];
+  const varint = () => {
+    let v = 0, shift = 0;
+    while (i < bytes.length) { const b = bytes[i++]; v += (b & 127) * 2 ** shift; shift += 7; if (!(b & 128)) return v; }
+    throw new Error('truncated');
+  };
+  try {
+    while (i < bytes.length) {
+      const key = varint(), field = Math.floor(key / 8), wire = key & 7;
+      if (wire === 0) { const v = varint(); if (field === 1) clef = v === 1 ? 'bass' : 'treble'; }
+      else if (wire === 2) {
+        const len = varint(), c = bytes.slice(i, i + len); i += len;
+        if (field === 2) eventBytes = c; else if (field === 3) chordChunks.push(c);
+      } else return null;
+    }
+  } catch { return null; }
+  return { clef, eventBytes, chordChunks };
 }
 
 /** Decode one Chord sub-message; returns null if malformed. */

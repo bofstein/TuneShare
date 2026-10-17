@@ -25,7 +25,7 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 | --- | --- |
 | Up to 20 measures | Lyrics; independent rhythms within one staff |
 | Chords: up to 5 notes of the same length (an app limit, not a format limit) | Chords whose notes have different lengths |
-| A second staff (planned: [#4](https://github.com/bofstein/TuneShare/issues/4)) | More than two staves |
+| A second staff, played together with the first, with its own clef | More than two staves |
 | Treble and bass clef; all 15 key signatures | Changing key, clef or tempo partway through |
 | 2/4, 3/4, 4/4, 6/8 | Other time signatures (they can be added later without breaking links) |
 | Whole to 16th notes; dotted half, quarter and 8th; rests | Triplets, 32nds, dotted 16ths, user-entered ties and slurs |
@@ -48,6 +48,14 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
   entered first. The limit, `MAX_CHORD_NOTES` in `src/model.js` (5), is an
   editor setting: the URL format allows any number, so the limit can be
   raised without breaking links. Two notes can't share a line or space.
+- **Second staff:** `tune.staff2 = {clef, events}`, absent for one staff.
+  The first staff stays in `tune.clef` and `tune.events`, so one-staff code
+  and links are unchanged. Both staves share every other header field
+  (key, time, tempo, measures), so they have the same capacity, and each
+  staff's events fill the timeline independently. Edit ops work on one staff
+  through a *view* (`staffView`: the tune with that staff's clef and events)
+  and `withStaffView` writes the result back. Measure and time changes look
+  at both staves. A staff can be removed only if it holds nothing but rests.
 - **Pitch is stored as the sounding pitch**: letter + octave + alteration
   (−1/0/+1). Written accidentals are worked out per measure when drawing.
   This means a note keeps its pitch when edits move it to another measure,
@@ -100,6 +108,11 @@ https://bofstein.github.io/TuneShare/#1.<base64url payload>
   zero). There is no limit on tones per chord. A reader that doesn't know
   field 8 skips it and shows each chord's main pitch, so the note list
   (field 7) never changes meaning.
+- **Second staff** is field 9:
+  `Staff { Clef clef = 1; bytes events = 2; repeated Chord chords = 3; }`,
+  packed exactly like fields 4, 7 and 8. Its presence, even with no notes,
+  means the tune has two staves. A reader that doesn't know field 9 shows
+  the first staff alone, unchanged.
 - **Link length:** the app warns once when a link passes 2,000 characters,
   roughly what chat apps, email and QR codes handle reliably.
 - **The decoder is lenient.** A damaged or truncated link still opens, keeping
@@ -126,6 +139,8 @@ breaks lenient decoding of truncated links.
   - `src/layout.js` (pure) turns a tune into positioned shapes plus hit-test
     geometry: splitting at bar lines, ties, beams, accidentals and spacing.
   - `src/render.js` turns that into SVG markup.
+- **Two staves** are drawn as a grand staff: a brace, and bar lines through
+  both. Spacing is shared, so notes that sound together line up.
 - **Chords** stack on one stem. Notes a second apart sit on opposite sides of
   the stem, accidentals stagger into columns (a column holds accidentals at
   least a sixth apart), and a tied chord ties every note.
@@ -151,7 +166,9 @@ breaks lenient decoding of truncated links.
   tooltip, and listed in the shortcut sheet (`?`). Letters are pitches,
   `1`–`5` are lengths (whole → 16th), and arrows move or change pitch.
   `Shift`+letter adds a note to the selected chord, and `Tab` moves between
-  its notes.
+  its notes. `Alt`+`↑`/`↓` moves to the other staff at the same beat.
+- **The cursor belongs to one staff** (the active staff). Typing and the
+  clef setting apply to it; clicking a staff makes it active.
 - **Colours have fixed meanings:** the selection is indigo, the note playing
   is amber, and warnings are amber with a ⚠ icon. Colour is never the only
   signal. Light and dark themes follow the system setting.

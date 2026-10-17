@@ -103,3 +103,38 @@ test('chord entries for rests or missing events are dropped as repairs', () => {
   assert.equal(r.repaired, false);
   assert.equal(r.tune.events[1].tones.length, 1);
 });
+
+test('second staff round-trips with its own clef and chords', () => {
+  const t = tune('C5:q D5:q E5:h');
+  const low = tune('C3:h G2:h');
+  low.events[0].tones = [{ step: 4, oct: 3, alter: 0 }];
+  t.staff2 = { clef: 'bass', events: low.events };
+  const r = decode('#' + encode(t));
+  assert.equal(r.repaired, false);
+  assert.deepEqual(r.tune, t);
+  // An empty second staff is kept, and its clef can be treble.
+  const e = { ...tune('C4:q'), staff2: { clef: 'treble', events: [] } };
+  assert.deepEqual(decode('#' + encode(e)).tune, e);
+});
+
+test('a reader without staves still gets the first staff unchanged', () => {
+  const one = tune('C5:q D5:q E5:h');
+  const two = { ...one, staff2: { clef: 'bass', events: tune('C3:w').events } };
+  // Field 9 is a length-delimited field, which older readers skip (see 'unknown fields are skipped').
+  const { staff2, ...rest } = decode('#' + encode(two)).tune;
+  assert.deepEqual(rest, one);
+});
+
+test('second staff is trimmed to the shared capacity', () => {
+  const t = { ...tune('C4:w', { measures: 1 }), staff2: { clef: 'bass', events: tune('C3:w C3:w').events } };
+  const r = decode('#' + encode(t));
+  assert.equal(r.repaired, true);
+  assert.equal(r.tune.staff2.events.length, 1);
+});
+
+// Fixture links must decode identically forever.
+test('fixture: two-staff link', () => {
+  const r = decode('#1.OgNGhGhKBwgBEgNEFEE');
+  assert.equal(r.repaired, false);
+  assert.deepEqual(r.tune, { ...tune('B4:q B4:q'), staff2: { clef: 'bass', events: tune('C3:q C3:q').events } });
+});
