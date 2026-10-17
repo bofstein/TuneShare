@@ -170,11 +170,12 @@ index.html, styles.css     app shell and styles
 src/theory.js              durations, keys, pitch math
 src/model.js               pure edit operations and the overflow rule
 src/codec.js, tune.proto   URL encode/decode
+src/debug.js               Ctrl+D dump of the URL protobuf (pure)
 src/layout.js, render.js   notation layout (pure) and SVG output
 src/audio.js               synth voice and playback scheduler
 src/store.js               current tune, cursor, undo, URL writes
 src/main.js                controller: input, toolbar, toasts, wiring
-tests/                     unit tests for codec, model and layout
+tests/                     unit tests for codec, debug, model and layout
 ```
 
 - State flows one way: input → model op → store → (URL, re-render).

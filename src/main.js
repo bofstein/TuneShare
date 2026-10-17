@@ -4,7 +4,8 @@ import {
   keyName, pitchName, tempoWord, toggleDot, undotted,
 } from './theory.js';
 import * as M from './model.js';
-import { decode } from './codec.js';
+import { decode, encode } from './codec.js';
+import { dumpFragment } from './debug.js';
 import { layout, G } from './layout.js';
 import { renderStaff, renderOverlay } from './render.js';
 import { Player, preview } from './audio.js';
@@ -388,6 +389,9 @@ function syncPlay() {
 // ---------- keyboard ----------
 document.addEventListener('keydown', e => {
   const t = e.target;
+  // Ctrl+D works everywhere (even in text fields) and overrides the browser's bookmark shortcut.
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'd') { toggleDebug(); e.preventDefault(); return; }
+  if (!$('debug').hidden) { if (e.key === 'Escape') { closeDebug(); e.preventDefault(); } return; }
   if (t.closest && t.closest('input, select, textarea')) return;
   if (!$('sheet').hidden) { if (e.key === 'Escape' || e.key === '?') closeSheet(); return; }
   if (drag && e.key === 'Escape') { cancelDrag(); e.preventDefault(); return; }
@@ -663,8 +667,21 @@ $('help').onclick = openSheet;
 $('sheetClose').onclick = closeSheet;
 $('sheet').onclick = e => { if (e.target === $('sheet')) closeSheet(); };
 
+// Debug overlay (Ctrl+D): live dump of the protobuf behind the URL
+function paintDebug() { $('debugDump').textContent = dumpFragment('#' + encode(tune())); }
+function openDebug() { closeSheet(); paintDebug(); $('debug').hidden = false; $('debugDump').focus(); }
+function closeDebug() { $('debug').hidden = true; card.focus({ preventScroll: true }); }
+function toggleDebug() { $('debug').hidden ? openDebug() : closeDebug(); }
+$('debugClose').onclick = closeDebug;
+$('debug').onclick = e => { if (e.target === $('debug')) closeDebug(); };
+$('debugCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('debugDump').textContent); toast({ title: 'Debug dump copied' }); }
+  catch { window.prompt('Copy the dump:', $('debugDump').textContent); }
+};
+
 // ---------- store + URL wiring ----------
 store.subscribe(change => {
+  if (change === 'tune' && !$('debug').hidden) paintDebug();
   if (change === 'tune') render();
   else { paintClasses(); paintOverlay(); sync(); }
 });

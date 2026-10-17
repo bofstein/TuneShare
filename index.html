@@ -117,11 +117,19 @@
         <div class="krow"><span>Swap with neighbour</span><span class="keys"><kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd></span></div>
         <div class="krow"><span>Delete (chord note, or note + gap)</span><span class="keys"><kbd>⌫</kbd></span></div>
         <div class="krow"><span>Undo / redo</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>Z</kbd> <kbd>Ctrl</kbd>+<kbd>Y</kbd></span></div>
+        <div class="krow"><span>Debug: show URL protobuf</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>D</kbd></span></div>
         <h3>Playback</h3>
         <div class="krow"><span>Play / stop</span><span class="keys"><kbd>Space</kbd></span></div>
         <div class="krow"><span>Loop</span><span class="keys"><kbd>L</kbd></span></div>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="scrim" id="debug" hidden>
+  <div class="sheet debug-sheet" role="dialog" aria-modal="true" aria-labelledby="debugTitle">
+    <div class="sheet-head"><h2 id="debugTitle">Debug: URL protobuf</h2><div class="spacer"></div><button class="btn" id="debugCopy">Copy</button><button class="icon-btn" id="debugClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+    <pre class="debug-dump" id="debugDump" tabindex="0"></pre>
   </div>
 </div>
 
