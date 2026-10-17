@@ -10,6 +10,7 @@ import { layout, G } from './layout.js';
 import { renderStaff, renderOverlay } from './render.js';
 import { Player, preview } from './audio.js';
 import { Store } from './store.js';
+import { fileName, toMusicXML } from './musicxml.js';
 import { toggleTheme } from './theme.js';
 
 const $ = id => document.getElementById(id);
@@ -752,6 +753,14 @@ $('copy').onclick = async () => {
   }
   try { await navigator.clipboard.writeText(url); toast({ title: 'Link copied', body: `${url.length} characters` }); }
   catch { window.prompt('Copy this link:', url); }
+};
+
+// MusicXML download
+$('exportXml').onclick = () => {
+  const blob = new Blob([toMusicXML(store.tune)], { type: 'application/vnd.recordare.musicxml+xml' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: fileName(store.tune) });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
 // Shortcut sheet
