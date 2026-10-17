@@ -9,7 +9,7 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 1. **The link is the document.** All tune state lives in the URL fragment.
    There is no backend, no account and no storage that a link depends on.
 2. **Old links never break.** The URL format only grows. Changes add new
-   fields, and existing fields keep their meaning (see [URL format](#url-format-v1)).
+   fields, and existing fields keep their meaning (see [URL format](#url-format-v2)).
 3. **Simple over complete.** TuneShare is a tool for sharing short music, not
    a notation suite. When a feature competes with clarity, clarity wins.
    Richer music (chords, a second staff) is welcome as long as a first-time
@@ -82,57 +82,113 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 - All edits are pure functions in `src/model.js` that return `{tune}` or
   `{error}`. The UI keeps undo history as snapshots.
 
-## URL format (v1)
+## URL format (v2)
 
 ```
-https://bofstein.github.io/TuneShare/#1.<base64url payload>
+https://bofstein.github.io/TuneShare/#2.<base64url payload>
 ```
 
 - State lives in the **hash fragment**. It is never sent to the server, and
   the app updates it with `history.replaceState` (never `pushState`, so Back
   leaves the app instead of stepping through edits).
-- The leading `1.` is the container version. The payload is a
+- The leading `2.` is the container version. The payload is a
   **protobuf `Tune` message** (schema: `src/tune.proto`), encoded by a small
-  hand-written codec in `src/codec.js`.
+  hand-written codec in `src/codec.js`. The notes of each staff are one
+  `bytes` field holding a bit stream, the **voice** (`src/voice.js`, below).
 - Header fields are ordinary protobuf fields, left out when they are at their
   default. Readers skip unknown fields, so new features can be added as new
   field numbers without breaking links in either direction.
-- **Notes are packed** into one `bytes` field at **12 bits per event**:
-  3 bits of duration code and 9 bits of pitch code. That is 2 URL characters
-  per note. A typical tune's link is about 100 characters, and the largest
-  possible tune's is about 520.
-- Pitch code: `0` = rest, otherwise `1 + (octave × 7 + step) × 3 + (alter + 1)`.
-  Codes 211–511 are reserved.
-- Duration codes: 0 = 16th, 1 = 8th, 2 = quarter, 3 = half, 4 = whole,
-  5 = dotted 8th, 6 = dotted quarter, 7 = dotted half.
-- **Chords** are field 8: `repeated Chord { uint32 index = 1; bytes tones = 2; }`.
-  `index` is the event's position in the note list, and `tones` holds its
-  extra pitches as 12-bit pitch codes (packed like the notes, duration bits
-  zero). There is no limit on tones per chord. A reader that doesn't know
-  field 8 skips it and shows each chord's main pitch, so the note list
-  (field 7) never changes meaning.
-- **Second staff** is field 9:
-  `Staff { Clef clef = 1; bytes events = 2; repeated Chord chords = 3; }`,
-  packed exactly like fields 4, 7 and 8. Its presence, even with no notes,
-  means the tune has two staves. A reader that doesn't know field 9 shows
-  the first staff alone, unchanged.
-- **Link length:** the app warns once when a link passes 2,000 characters,
-  roughly what chat apps, email and QR codes handle reliably.
+- Header fields: `title = 1`, `bpm = 2`, `key = 3` (zigzag), `clef = 4`
+  (1 = bass), `time = 5` (index into 4/4, 3/4, 2/4, 6/8), `measures = 6`.
+  `voice = 10` is the first staff. `staff2 = 9` is
+  `Staff { Clef clef = 1; bytes voice = 4; }`; its presence, even with no
+  notes, means the tune has two staves.
+- **Old links keep working.** `1.` links (12-bit events in field 7, chords in
+  field 8, second staff with fields 2 and 3) are still read by the same
+  decoder, and the app rewrites them as `2.` links as soon as it loads one
+  that isn't damaged. A link with a higher version than the code (a stale
+  tab meeting a newer link) makes the app reload once to fetch the new code;
+  if the link is still newer, it shows a "newer version" notice with a Reload
+  button.
+- **Link length:** a typical tune is 40–120 characters, about 3 times shorter
+  than the same tune in v1. The app warns once when a link passes 2,000
+  characters, roughly what chat apps, email and QR codes handle reliably.
 - **The decoder is lenient.** A damaged or truncated link still opens, keeping
   every complete note, and the app shows a "this link was damaged" toast.
 
-**Rules for changing the format:**
-- Never renumber a duration code, a pitch code or a field.
-- Add new data as new fields, or in the reserved code space.
-- Add every new format feature to the fixture tests in
-  `tests/codec.test.js`. Fixture links must decode the same forever.
-- Bump the `1.` prefix only if the container itself changes, and keep the old
-  decoder when you do.
+### The voice
 
-Why protobuf: it was the smallest of the encodings we measured that still
-has a real schema. Ode to Joy is 92 characters, against 238 for compressed
-JSON. Compression was left out because it doesn't shrink short tunes and it
-breaks lenient decoding of truncated links.
+A voice is an event list (notes and rests, chords as extra tones). It is
+written as a bit stream, most significant bit first, padded with zeros.
+Numbers are **Exp-Golomb**: `n ≥ 0` is written as `n + 1` in binary, with one
+fewer leading zeros than it has bits (0 = `1`, 1 = `010`, 2 = `011`, 3 = `00100`).
+A signed number is zigzagged first (0, −1, 1, −2, … → 0, 1, 2, 3, …).
+
+```
+count            Exp-Golomb   number of events (≤ 320)
+flags            3 bits       the voice uses rests / accidentals outside the key / chords
+then items until `count` events are covered, each one of:
+
+literal   1                                   one event
+          [rest bit]                          only if the rests flag is set
+          0 | 1 + 3-bit duration              0 = same length as the previous event (quarter at the start)
+          (a rest ends here)
+          signed Exp-Golomb                   scale steps from the previous note (see below)
+          [accidental]                        only if the accidentals flag is set
+          [chord]                             only if the chords flag is set
+
+copy      0                                   events copied from earlier in the voice
+          Exp-Golomb dist - 1                 how far back the first copied event is
+          Exp-Golomb len - 2
+          signed Exp-Golomb shift             added to every copied pitch, in scale steps
+```
+
+- **Pitch** is counted in scale steps from C0 (octave × 7 + letter). A note's
+  distance is measured from the previous note's pitch (after a copy, from the
+  last copied note), starting at B4 in treble clef and D3 in bass clef. Rests
+  don't move it. A pitch outside C0–B9 is invalid.
+- **Accidental:** `0` = the key signature's alteration for that letter, else
+  `1` followed by one bit choosing between the other two alterations, in the
+  order ♭, ♮, ♯ with the key's own left out. So F♯ in G major costs one bit,
+  and a tune that never leaves its key costs nothing (flag off).
+- **Chord:** one bit, `0` = a single note. `1` is followed by an Exp-Golomb
+  number `k`. `k = 0` is a new shape: the tone count − 1, then each tone as a
+  signed step distance from the previous tone (the first from the note) plus
+  an accidental. `k ≥ 1` reuses shape `k` of the 8 most recently used shapes
+  (1 = the latest; a reused or new shape moves to the front). There is no
+  limit on tones per chord.
+- **Copies** make a repeated bar or a sequence cost a few bits. They may copy
+  a rest and may overlap themselves (distance 1 is a run of one note). A copy
+  keeps durations, accidentals and chord shape and moves only the pitch, so a
+  bar of accompaniment reused over a new chord is one copy with a shift.
+- **The second staff may copy from the first**, as if the first staff's events
+  came before its own. This makes a canon or an octave doubling nearly free.
+- The encoder picks copies greedily (the longest, then the cheapest), only
+  where a copy is cheaper than 8 bits per event.
+- The codec works in four steps so tools can show each: `planVoice` (events →
+  ops), `writeVoice` (ops → bytes), `parseVoice` (bytes → ops, syntax only) and
+  `resolveVoice` (ops → events, with every copy and shift worked out). The
+  Ctrl+D dump prints the ops with their bit ranges and the notes each one
+  becomes.
+- Duration codes: 0 = 16th, 1 = 8th, 2 = quarter, 3 = half, 4 = whole,
+  5 = dotted 8th, 6 = dotted quarter, 7 = dotted half.
+
+**Rules for changing the format:**
+- Never renumber a duration code, a field, or a bit in the voice.
+- Add new data as new fields. Keep reading every older version.
+- Add every new format feature to the fixture tests in
+  `tests/codec.test.js` and `tests/voice.test.js`. Fixture links must decode
+  the same forever.
+- Bump the `2.` prefix only if the container or the voice itself changes, and
+  keep the old decoder when you do.
+
+Why this format: protobuf for the header gives a real schema and free
+extension, and the voice drops protobuf's tags where every byte counts. Across
+17 sample tunes (well-known melodies and generated accompaniment patterns),
+v2 links are 63% shorter than v1 (1,984 characters against 5,339 in total);
+a hymn with a chord on every note went from 873 to 80. Deflate was left out
+because it doesn't shrink short tunes, makes decoding async, and breaks
+lenient decoding of truncated links.
 
 ## Rendering and audio
 
@@ -192,17 +248,18 @@ npm test                   # unit tests (node:test, no install needed)
 index.html, styles.css     app shell and styles
 src/theory.js              durations, keys, pitch math
 src/model.js               pure edit operations and the overflow rule
-src/codec.js, tune.proto   URL encode/decode
+src/codec.js, tune.proto   URL encode/decode (container, v1 reader)
+src/voice.js               the v2 voice bit stream: plan, write, parse, resolve
 src/debug.js               Ctrl+D dump of the URL protobuf (pure)
 src/layout.js, render.js   notation layout (pure) and SVG output
 src/audio.js               synth voice and playback scheduler
 src/store.js               current tune, cursor, undo, URL writes
 src/main.js                controller: input, toolbar, toasts, wiring
-tests/                     unit tests for codec, debug, model and layout
+tests/                     unit tests for codec, voice, debug, model and layout
 ```
 
 - State flows one way: input → model op → store → (URL, re-render).
-- Keep modules that make decisions (`theory`, `model`, `codec`, `layout`) pure,
+- Keep modules that make decisions (`theory`, `model`, `codec`, `voice`, `layout`) pure,
   with no DOM access, so they stay unit-testable.
 - CI (`.github/workflows/test.yml`) runs `npm test` on every push and pull
   request.

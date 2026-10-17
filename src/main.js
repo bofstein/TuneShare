@@ -4,7 +4,7 @@ import {
   halfStep, keyName, pitchName, tempoWord, toggleDot, undotted,
 } from './theory.js';
 import * as M from './model.js';
-import { decode, encode } from './codec.js';
+import { decode, encode, VERSION } from './codec.js';
 import { dumpFragment } from './debug.js';
 import { layout, G } from './layout.js';
 import { renderStaff, renderOverlay } from './render.js';
@@ -20,6 +20,9 @@ const host = $('staffHost'), card = $('staffCard');
 const initial = decode(location.hash);
 const store = new Store(initial.tune);
 store.lastHash = location.hash;
+// An old-format link is rewritten in the current format right away (replaceState, so no extra Back step).
+// A damaged link is left alone so its toast and original text stay.
+if (initial.version < VERSION && !initial.repaired) store.flushUrl();
 const player = new Player();
 let inputDur = 2;               // duration for the next note; follows the selected note's length
 let previewOn = true, loopOn = false;
@@ -796,13 +799,25 @@ store.onUrl = len => {
   if (len > LONG_LINK && !warnedLong) toast({ kind: 'warn', title: 'This link is getting long', body: `${len} characters — some apps may cut it off.` });
   warnedLong = len > LONG_LINK;
 };
+// A link from a newer version means this tab runs stale code. Reload once to fetch the new code; the
+// attempt is remembered per tab, so a version that isn't deployed yet (or blocked storage) can't loop.
+function newerLink(version) {
+  let tried = true;
+  try {
+    tried = sessionStorage.getItem('reloadedFor') === String(version);
+    if (!tried) sessionStorage.setItem('reloadedFor', String(version));
+  } catch { /* storage blocked: just show the notice */ }
+  if (!tried) { location.reload(); return; }
+  toast({ kind: 'warn', title: 'Made with a newer TuneShare', body: 'Reload to get the latest version. Some features of this tune may not display until you do.', action: 'Reload', onAction: () => location.reload(), ms: 15000 });
+}
 addEventListener('hashchange', () => {
   if (location.hash === store.lastHash) return;
   stopPlayback();
   const r = decode(location.hash);
   store.lastHash = location.hash;
   store.load(r.tune);
-  if (r.repaired) toast({ kind: 'warn', title: 'This link was damaged', body: 'Some notes may be missing.' });
+  if (r.newer) newerLink(r.version);
+  else if (r.repaired) toast({ kind: 'warn', title: 'This link was damaged', body: 'Some notes may be missing.' });
 });
 let resizeRaf = 0;
 addEventListener('resize', () => { cancelAnimationFrame(resizeRaf); resizeRaf = requestAnimationFrame(render); });
@@ -810,6 +825,6 @@ addEventListener('resize', () => { cancelAnimationFrame(resizeRaf); resizeRaf = 
 // ---------- start ----------
 document.fonts.ready.then(render);
 render();
-if (initial.newer) toast({ kind: 'warn', title: 'Made with a newer TuneShare', body: 'Some features of this tune may not display.' });
+if (initial.newer) newerLink(initial.version);
 else if (initial.repaired) toast({ kind: 'warn', title: 'This link was damaged', body: 'Some notes may be missing.' });
 card.focus({ preventScroll: true });

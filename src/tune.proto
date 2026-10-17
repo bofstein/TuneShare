@@ -2,20 +2,26 @@ syntax = "proto3";
 package tuneshare;
 
 // Zero values are the defaults and are never written (proto3 semantics),
-// so an empty tune is an empty message: the whole URL fragment is "#1."
+// so an empty tune is an empty message: the whole URL fragment is "#2."
+//
+// Format v2 (current). The notes of a staff are one bit stream, the "voice",
+// that protobuf cannot describe: see DESIGN.md, "The voice", and src/voice.js.
+// Links starting "1." use the v1 fields marked below; they are still read, never written.
 message Tune {
   string   title    = 1;  // ≤ 60 chars, UTF-8
   uint32   bpm      = 2;  // 40–240; 0/absent = 100
   sint32   key      = 3;  // −7..7, number of flats (−) or sharps (+); 0 = C major / A minor
   Clef     clef     = 4;
   TimeSig  time     = 5;
-  uint32   measures = 6;  // 1–12; 0/absent = 4
-  bytes    events   = 7;  // packed 12-bit events, see below
-  repeated Chord chords = 8;  // extra pitches of chord events
+  uint32   measures = 6;  // 1–20; 0/absent = 4
+  bytes    events   = 7;  // v1 only: packed 12-bit events
+  repeated Chord chords = 8;  // v1 only: extra pitches of chord events
   Staff    staff2   = 9;  // present = the tune has a second staff (even if empty)
-  // 10+ reserved for future fields (e.g. tie flags, swing, instrument)
+  bytes    voice    = 10; // v2: the first staff's notes, rests and chords as a bit stream
+  // 11+ reserved for future fields (e.g. tie flags, swing, instrument)
 }
 
+// v1 only.
 message Chord {
   uint32 index = 1;  // position in the note list
   bytes  tones = 2;  // packed 12-bit pitch codes (duration bits zero)
@@ -24,8 +30,9 @@ message Chord {
 // A second staff shares every Tune header field except the clef.
 message Staff {
   Clef  clef   = 1;
-  bytes events = 2;           // same packing as Tune.events
-  repeated Chord chords = 3;
+  bytes events = 2;           // v1 only: same packing as Tune.events
+  repeated Chord chords = 3;  // v1 only
+  bytes voice  = 4;           // v2: same bit stream as Tune.voice; may copy from the first staff
 }
 
 enum Clef    { TREBLE = 0; BASS = 1; }
