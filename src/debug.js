@@ -7,9 +7,10 @@ import { DUR_NAME, LETTERS, TIMES } from './theory.js';
 
 const WIRE = ['varint', 'i64', 'len', 'sgroup', 'egroup', 'i32'];
 const FIELDS = {
-  1: 'title', 2: 'bpm', 3: 'key', 4: 'clef', 5: 'time', 6: 'measures', 7: 'events', 8: 'chord',
+  1: 'title', 2: 'bpm', 3: 'key', 4: 'clef', 5: 'time', 6: 'measures', 7: 'events', 8: 'chord', 9: 'staff2',
 };
 const CHORD_FIELDS = { 1: 'index', 2: 'tones' };
+const STAFF_FIELDS = { 1: 'clef', 2: 'events', 3: 'chord' };
 
 const hex = bytes => bytes.map(b => b.toString(16).padStart(2, '0')).join(' ');
 const pitchName = p => LETTERS[p.step] + (['♭', '', '♯'][p.alter + 1]) + p.oct;
@@ -75,16 +76,17 @@ function fieldLines(f, names, indent) {
   const head = `${indent}${f.field} ${name} (${WIRE[f.wire]}) @${f.offset}`;
   const lines = [];
   if (f.wire === 0) {
-    const note = names === FIELDS ? annotate(f) : '';
+    const note = names === FIELDS ? annotate(f) : names === STAFF_FIELDS && f.field === 1 ? (['TREBLE', 'BASS'][f.value] ?? 'unknown enum') : '';
     lines.push(`${head}: ${f.value}${note ? `  ${note}` : ''}`);
   } else {
     lines.push(`${head}: ${f.bytes.length} bytes  ${hex(f.bytes)}`);
     const sub = indent + '    ';
     if (names === FIELDS && f.field === 1) lines.push(`${sub}${annotate(f)}`);
-    if ((names === FIELDS && f.field === 7) || (names === CHORD_FIELDS && f.field === 2)) {
+    if ((names === FIELDS && f.field === 7) || (names === STAFF_FIELDS && f.field === 2) || (names === CHORD_FIELDS && f.field === 2)) {
       unpack12(f.bytes).forEach((c, k) => lines.push(`${sub}[${k}] ${describeCode(c, names === CHORD_FIELDS)}`));
     }
-    if (names === FIELDS && f.field === 8) {
+    if (names === FIELDS && f.field === 9) walk(f.bytes).forEach(g => lines.push(...fieldLines(g, STAFF_FIELDS, sub)));
+    if ((names === FIELDS && f.field === 8) || (names === STAFF_FIELDS && f.field === 3)) {
       const sub8 = walk(f.bytes);
       if (!sub8.some(g => g.field === 1)) lines.push(`${sub}(index absent → 0)`);
       sub8.forEach(g => lines.push(...fieldLines(g, CHORD_FIELDS, sub)));

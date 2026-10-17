@@ -12,6 +12,9 @@ fragment, and there is no server.
 - `Shift`+`A`–`G` stacks a note onto the selected one to make a chord (up to
   5 notes); `Tab` moves between a chord's notes.
 - Or click the staff, or drag a note from the toolbar onto it.
+- **Staves: 2** in the settings adds a second staff (bass clef by default) that
+  plays along with the first. Click either staff, or press `Alt`+`↑`/`↓`, to
+  write on it.
 - **Copy link** shares the tune. Press `?` in the app for every shortcut.
 
 ## Development

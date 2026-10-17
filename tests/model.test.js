@@ -86,3 +86,28 @@ test('chords keep their tones through ripple edits and length changes', () => {
   assert.deepEqual(r.events[1].tones, [P(2, 4)]);
   assert.equal(r.events[1].dur, 3);
 });
+
+test('staves: add, view, write back, and remove only when empty', () => {
+  const t = M.addStaff(tune('C5:q')).tune;
+  assert.equal(M.staffCount(t), 2);
+  assert.equal(t.staff2.clef, 'bass');
+  const v = M.staffView(t, 1);
+  assert.deepEqual(v.events, []);
+  const edited = M.insert(v, 0, n('C3:h')).tune;
+  const back = M.withStaffView(t, 1, { ...edited, key: 2 });
+  assert.deepEqual(back.events, parse('C5:q'));
+  assert.deepEqual(back.staff2, { clef: 'bass', events: parse('C3:h') });
+  assert.equal(back.key, 2);
+  assert.equal(M.removeStaff(back, 1).error, 'staff-not-empty');
+  // Removing an empty first staff promotes the second one.
+  const promoted = M.removeStaff(M.withStaffView(back, 0, { ...back, events: parse('r:q') }), 0).tune;
+  assert.deepEqual(promoted.events, parse('C3:h'));
+  assert.equal(promoted.clef, 'bass');
+  assert.equal(promoted.staff2, undefined);
+});
+
+test('measure and time changes consider both staves', () => {
+  const t = { ...tune('C4:w', { measures: 2 }), staff2: { clef: 'bass', events: parse('C3:w C3:w') } };
+  assert.equal(M.setMeasures(t, 1).error, 'measure-not-empty');
+  assert.equal(M.setTime(t, '2/4').tune.measures, 4);
+});

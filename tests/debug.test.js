@@ -32,10 +32,17 @@ test('events and chords are unpacked into 12-bit codes', () => {
 });
 
 test('unknown fields and garbage are shown, not hidden', () => {
-  const bytes = [0x48, 0x05, 0x3a, 0x09, 0x01];       // field 9 varint 5, then a truncated field 7
+  const bytes = [0x50, 0x05, 0x3a, 0x09, 0x01];       // field 10 varint 5, then a truncated field 7
   const d = dumpFragment('#1.' + Buffer.from(bytes).toString('base64url'));
-  assert.match(d, /9 unknown \(varint\) @0: 5/);
+  assert.match(d, /10 unknown \(varint\) @0: 5/);
   assert.match(d, /!! truncated: 1\/9 bytes/);
   assert.equal(walk([0x80]).at(-1).error.startsWith('truncated varint'), true);
   assert.match(dumpFragment('#nope'), /not a "<version>/);
+});
+
+test('the second staff is dumped field by field', () => {
+  const d = dumpFragment('#1.OgNGhGhKBwgBEgNEFEE');
+  assert.match(d, /9 staff2 \(len\)/);
+  assert.match(d, /1 clef \(varint\)[^\n]*: 1  BASS/);
+  assert.match(d, /2 events \(len\)[^\n]*\n\s+\[0\] 0x\w{3} {2}quarter C3/);
 });

@@ -21,12 +21,17 @@ store.lastHash = location.hash;
 const player = new Player();
 let inputDur = 2;               // duration for the next note; follows the selected note's length
 let previewOn = true, loopOn = false;
-let playing = -1;               // event index currently sounding, -1 = none
+let playing = [];               // "staff:index" keys of the events sounding now
 let lay = null;
 let hover = null;               // {slot, pos} ghost while hovering / placing / dragging a chip
 let drag = null;                // active pointer interaction
 
-const tune = () => store.tune;
+// Edits work on the active staff (the cursor's) through a view of the tune: header fields plus
+// that staff's clef and events. apply() writes the view back. See model.js, "second staff".
+const staffIdx = () => store.cursor.staff || 0;
+const tune = () => M.staffView(store.tune, staffIdx());
+const twoStaves = () => M.staffCount(store.tune) > 1;
+const staffName = s => (s ? 'lower staff' : 'upper staff');
 const selIndex = () => (store.cursor.type === 'note' ? store.cursor.index : -1);
 const selected = () => tune().events[selIndex()] || null;
 /** Which pitch of the selected chord is selected (0 = main pitch). */
@@ -70,16 +75,25 @@ function warnFull() {
 const ERRORS = {
   'chord-full': ['Chord is full', `Chords can have up to ${M.MAX_CHORD_NOTES} notes.`],
   duplicate: ['Already in the chord', 'That line or space already has a note in this chord.'],
+  'staff-not-empty': ["The lower staff isn't empty", 'Delete its notes first.'],
 };
-function apply(result, cursor, sound) {
-  if (result.error) {
-    if (result.error === M.ERR_FULL) warnFull();
-    else if (ERRORS[result.error]) toast({ kind: 'warn', title: ERRORS[result.error][0], body: ERRORS[result.error][1], ms: 4000 });
-    return false;
-  }
+/** Commit an edit made on the view of staff s (default: the active staff). */
+function apply(result, cursor, sound, s = staffIdx()) {
+  if (result.error) return showError(result);
+  applyWhole({ tune: M.withStaffView(store.tune, s, result.tune) }, cursor && { ...cursor, staff: s }, sound);
+  return true;
+}
+/** Commit an edit made on the whole tune (all staves). */
+function applyWhole(result, cursor, sound) {
+  if (result.error) return showError(result);
   store.commit(result.tune, cursor);
   if (sound && previewOn && !sound.rest) preview(...M.pitchesOf(sound));
   return true;
+}
+function showError(result) {
+  if (result.error === M.ERR_FULL) warnFull();
+  else if (ERRORS[result.error]) toast({ kind: 'warn', title: ERRORS[result.error][0], body: ERRORS[result.error][1], ms: 4000 });
+  return false;
 }
 
 /** Add a chord tone with letter `step` to the selected note, in the nearest octave above the selected pitch. */
@@ -212,16 +226,34 @@ function moveCursor(dir) {
   select(i);
 }
 
-function select(i, tone = 0) {
-  store.setCursor({ type: 'note', index: i, tone });
+function select(i, tone = 0, staff = staffIdx()) {
+  store.setCursor({ type: 'note', index: i, tone, staff });
   const e = tune().events[i];
   if (e && !e.rest && previewOn && !player.playing) preview(...M.pitchesOf(e));
 }
 
 function setMeasures(n) {
-  const r = M.setMeasures(tune(), n);
+  const r = M.setMeasures(store.tune, n);
   if (r.error) { toast({ kind: 'warn', title: `Measure ${tune().measures} isn't empty`, body: 'Delete its notes first.', ms: 4000 }); return; }
-  apply(r);
+  applyWhole(r);
+}
+
+/** Move to the other staff, keeping the caret at the same point in time. */
+function switchStaff(dir) {
+  const to = staffIdx() + dir;
+  if (!lay || to < 0 || to >= M.staffCount(store.tune)) return;
+  const cur = lay.geo.staves[staffIdx()], c = store.cursor;
+  const tick = c.index < cur.starts.length ? cur.starts[c.index] : cur.used;
+  const next = lay.geo.staves[to].starts;
+  let index = next.findIndex(t => t >= tick);
+  if (index < 0) index = next.length;
+  store.setCursor({ type: 'caret', index, staff: to });
+}
+
+function setStaves(n) {
+  if (n === M.staffCount(store.tune)) return;
+  if (n === 2) { applyWhole(M.addStaff(store.tune), { type: 'caret', index: 0, staff: 1 }); return; }
+  applyWhole(M.removeStaff(store.tune, 1), { type: 'caret', index: store.tune.events.length, staff: 0 });
 }
 
 function edit(fn) { return () => { stopPlayback(); fn(); }; }
@@ -229,20 +261,21 @@ function edit(fn) { return () => { stopPlayback(); fn(); }; }
 // ---------- playback ----------
 function togglePlay() {
   if (player.playing) { stopPlayback(); return; }
-  const from = Math.max(0, selIndex());
-  player.play(tune(), from, {
+  const from = selIndex() >= 0 && lay ? lay.geo.staves[staffIdx()].starts[selIndex()] : 0;
+  player.play(store.tune, from, {
     loop: () => loopOn,
-    onEvent: i => { if (i !== playing) { playing = i; paintClasses(); scrollToEvent(i); } },
-    onEnd: () => { playing = -1; paintClasses(); syncPlay(); },
+    onEvent: keys => { playing = keys; paintClasses(); if (keys.length) scrollToEvent(keys[0]); },
+    onEnd: () => { playing = []; paintClasses(); syncPlay(); },
   });
   syncPlay();
 }
 function stopPlayback() {
   if (!player.playing) return;
-  player.stop(); playing = -1; paintClasses(); syncPlay();
+  player.stop(); playing = []; paintClasses(); syncPlay();
 }
-function scrollToEvent(i) {
-  const g = host.querySelector(`.ev[data-i="${i}"]`);
+function scrollToEvent(key) {
+  const [s, i] = key.split(':');
+  const g = host.querySelector(`.ev[data-s="${s}"][data-i="${i}"]`);
   if (g && g.scrollIntoView) g.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
@@ -260,37 +293,38 @@ function render() {
 
 function paintClasses() {
   host.querySelectorAll('.ev').forEach(g => {
-    const i = +g.dataset.i;
-    g.classList.toggle('sel', i === selIndex());
-    g.classList.toggle('play', i === playing);
-    g.querySelectorAll('.halo').forEach(h => h.classList.toggle('on', i === selIndex() && +h.dataset.tone === selTone()));
+    const i = +g.dataset.i, sel = +g.dataset.s === staffIdx() && i === selIndex();
+    g.classList.toggle('sel', sel);
+    g.classList.toggle('play', playing.includes(`${g.dataset.s}:${i}`));
+    g.querySelectorAll('.halo').forEach(h => h.classList.toggle('on', sel && +h.dataset.tone === selTone()));
   });
 }
 
-/** Compute where an insert at (loc) would go: {index|tick, k, x}. */
+/** Compute where an insert at (loc) would go: {st, index|tick, k, x}, st = the staff under the pointer. */
 function slotFor(loc) {
-  const { geo } = lay, ev = tune().events;
-  if (loc.abs >= geo.used) {
-    const tick = Math.min(Math.round(loc.abs / 2) * 2, M.capacity(tune()) - 1);
-    if (tick <= geo.used) {
-      const s = geo.slotX(geo.used);
-      return { index: ev.length, k: s.k, x: s.x, abs: geo.used };
+  const { geo } = lay, st = loc.s, ev = M.staffEvents(store.tune, st), { used, starts } = geo.staves[st];
+  if (loc.abs >= used) {
+    const tick = Math.min(Math.round(loc.abs / 2) * 2, M.capacity(store.tune) - 1);
+    if (tick <= used) {
+      const s = geo.slotX(used);
+      return { st, index: ev.length, k: s.k, x: s.x, abs: used };
     }
     const m = Math.floor(tick / geo.tpm);
-    return { tick, k: geo.systems.findIndex(s => m >= s.mFirst && m <= s.mLast), x: geo.tx(m, tick - m * geo.tpm), abs: tick, free: true };
+    return { st, tick, k: geo.systems.findIndex(s => m >= s.mFirst && m <= s.mLast), x: geo.tx(m, tick - m * geo.tpm), abs: tick, free: true };
   }
   let j = 0;
-  while (j < ev.length - 1 && geo.starts[j + 1] <= loc.abs) j++;
+  while (j < ev.length - 1 && starts[j + 1] <= loc.abs) j++;
   const len = DUR_TICKS[ev[j].dur];
-  const index = loc.abs - geo.starts[j] < len / 2 ? j : j + 1;
-  const abs = index < ev.length ? geo.starts[index] : geo.used;
+  const index = loc.abs - starts[j] < len / 2 ? j : j + 1;
+  const abs = index < ev.length ? starts[index] : used;
   const s = geo.slotX(abs);
-  return { index, k: s.k, x: s.x, abs };
+  return { st, index, k: s.k, x: s.x, abs };
 }
 
+const clefOf = s => M.staffView(store.tune, s).clef;
 function ghostPos(loc) {
-  const c = CLEFS[tune().clef];
-  return clampDiatonic(tune().clef, loc.pos + c.bottom) - c.bottom;
+  const clef = clefOf(loc.s), c = CLEFS[clef];
+  return clampDiatonic(clef, loc.pos + c.bottom) - c.bottom;
 }
 
 function paintOverlay() {
@@ -300,13 +334,14 @@ function paintOverlay() {
   const hw = 1.18 * lay.sp;
   if (hover) {
     const { slot, pos, tip, rest } = hover;
-    o.marker = slot.free ? null : { k: slot.k, x: slot.x };
-    o.ghost = { k: slot.k, x: slot.free ? slot.x : slot.x - hw / 2, pos, ticks: DUR_TICKS[activeDurForGhost()], rest };
+    o.marker = slot.free ? null : { k: slot.k, s: slot.st, x: slot.x };
+    o.ghost = { k: slot.k, s: slot.st, x: slot.free ? slot.x : slot.x - hw / 2, pos, ticks: DUR_TICKS[activeDurForGhost()], rest };
     if (tip) o.tip = tip;
   } else if (store.cursor.type === 'caret') {
-    const abs = store.cursor.index < tune().events.length ? lay.geo.starts[store.cursor.index] : lay.geo.used;
+    const { starts, used } = lay.geo.staves[staffIdx()];
+    const abs = store.cursor.index < tune().events.length ? starts[store.cursor.index] : used;
     const s = lay.geo.slotX(Math.min(abs, M.capacity(tune()) - 1));
-    o.marker = { k: s.k, x: s.x, caret: true };
+    o.marker = { k: s.k, s: staffIdx(), x: s.x, caret: true };
   }
   ov.innerHTML = renderOverlay(lay, o);
 }
@@ -334,12 +369,13 @@ function sync() {
   $('redo').disabled = !store.redoStack.length;
 
   const ro = $('readout');
+  const where = twoStaves() ? ` · ${staffName(staffIdx())}` : '';
   if (sel) {
-    const st = lay ? lay.geo.starts[selIndex()] : 0, tpm = M.measureTicks(t);
+    const st = lay ? lay.geo.staves[staffIdx()].starts[selIndex()] : 0, tpm = M.measureTicks(t);
     const bt = (st % tpm) / 4 + 1;
     const frac = bt % 1, beat = Math.floor(bt) + (frac === 0.5 ? '½' : frac === 0.25 ? '¼' : frac === 0.75 ? '¾' : '');
     ro.className = 'readout';
-    ro.innerHTML = `<span></span><span class="sub">bar ${Math.floor(st / tpm) + 1} · beat ${beat}</span>`;
+    ro.innerHTML = `<span></span><span class="sub">bar ${Math.floor(st / tpm) + 1} · beat ${beat}${where}</span>`;
     if (sel.rest) ro.firstChild.textContent = 'Rest · ' + DUR_NAME[sel.dur];
     else {
       // Chord: list pitches bottom to top, underlining the selected one.
@@ -349,13 +385,13 @@ function sync() {
     }
   } else {
     ro.className = 'readout idle';
-    ro.innerHTML = `<span>Next note: ${DUR_NAME[inputDur]}</span><span class="sub">type A–G or click the staff</span>`;
+    ro.innerHTML = `<span>Next note: ${DUR_NAME[inputDur]}</span><span class="sub">${where ? `on the ${staffName(staffIdx())} · Alt+↑↓ switches` : 'type A–G or click the staff'}</span>`;
   }
 
   $('hint').innerHTML = sel
     ? `<span>${kbd('↑')}${kbd('↓')} pitch</span><span>${kbd('⇧')}+${kbd('A')}–${kbd('G')} add to chord</span>${sel && M.pitchesOf(sel).length > 1 ? `<span>${kbd('Tab')} next chord note</span>` : ''}<span>${kbd('⇧')}+${kbd('↑')}${kbd('↓')} octave</span><span>${kbd('1')}–${kbd('5')} length</span><span>${kbd('#')} ${kbd('-')} ${kbd('=')} accidentals</span><span>${kbd('A')}–${kbd('G')} insert after</span><span>${kbd('⌫')} delete</span><span>${kbd('?')} all shortcuts</span>`
     : `<span>Type ${kbd('A')}–${kbd('G')} to add notes</span><span>Click the staff to place one</span><span>Drag a note from the toolbar</span><span>${kbd('Space')} play</span><span>${kbd('?')} all shortcuts</span>`;
-  $('emptyHint').hidden = t.events.length > 0;
+  $('emptyHint').hidden = store.tune.events.length > 0 || twoStaves();
 
   if (document.activeElement !== $('title')) $('title').value = t.title;
   if (document.activeElement !== $('bpm')) $('bpm').value = t.bpm;
@@ -363,13 +399,16 @@ function sync() {
   $('key').value = String(t.key);
   $('clefT').classList.toggle('on', t.clef === 'treble');
   $('clefB').classList.toggle('on', t.clef === 'bass');
+  $('clefLbl').textContent = twoStaves() ? `Clef (${staffIdx() ? 'lower' : 'upper'})` : 'Clef';
+  $('staves1').classList.toggle('on', !twoStaves());
+  $('staves2').classList.toggle('on', twoStaves());
   $('time').value = t.time;
   $('measures').textContent = t.measures;
   $('mUp').disabled = t.measures >= M.MAX_MEASURES;
   $('mDown').disabled = t.measures <= 1;
-  $('settingsSummary').innerHTML = `<span class="mg">${G.mQ}</span>=${t.bpm} · ${keyName(t.key).split(' / ')[0]} · ${t.time} · ${t.measures} bars`;
+  $('settingsSummary').innerHTML = `<span class="mg">${G.mQ}</span>=${t.bpm} · ${keyName(t.key).split(' / ')[0]} · ${t.time} · ${t.measures} bars${twoStaves() ? ' · 2 staves' : ''}`;
   document.title = t.title ? `${t.title} — TuneShare` : 'TuneShare';
-  card.setAttribute('aria-label', sel ? `Staff. Selected: ${sel.rest ? 'rest' : M.pitchesOf(sel).map(pitchName).join(', ')}, ${DUR_NAME[sel.dur]}` : 'Staff');
+  card.setAttribute('aria-label', sel ? `Staff${where}. Selected: ${sel.rest ? 'rest' : M.pitchesOf(sel).map(pitchName).join(', ')}, ${DUR_NAME[sel.dur]}` : 'Staff');
   syncPlay();
 }
 
@@ -412,6 +451,7 @@ document.addEventListener('keydown', e => {
   else if (key === 'r' || key === 'R') edit(typeRest)();
   else if (/^[1-5]$/.test(key)) edit(() => setDur([4, 3, 2, 1, 0][+key - 1]))();
   else if (key === '.') edit(toggleDotted)();
+  else if ((key === 'ArrowUp' || key === 'ArrowDown') && e.altKey) switchStaff(key === 'ArrowUp' ? -1 : 1);
   else if (key === 'ArrowUp') edit(() => movePitch(e.shiftKey ? 7 : 1))();
   else if (key === 'ArrowDown') edit(() => movePitch(e.shiftKey ? -7 : -1))();
   else if (key === '#' || key === '+') edit(() => setAlter(1))();
@@ -450,23 +490,24 @@ function hoverAt(ev, withTip) {
   const pos = ghostPos(loc);
   const h = { slot, pos };
   if (withTip) {
-    const c = CLEFS[tune().clef], d = pos + c.bottom, p = fromDiatonic(d);
+    const c = CLEFS[clefOf(slot.st)], d = pos + c.bottom, p = fromDiatonic(d);
     const name = pitchName({ ...p, alter: keyAlter(tune().key, p.step) });
     const dur = activeDurForGhost();
-    const moved = slot.free ? 0 : tune().events.slice(slot.index).filter(e => !e.rest).length;
+    const moved = slot.free ? 0 : M.staffEvents(store.tune, slot.st).slice(slot.index).filter(e => !e.rest).length;
     h.tip = { text: `Insert ${name} · ${DUR_NAME[dur]}`, sub: slot.free ? 'earlier beats fill with rests' : moved ? `pushes ${moved} note${moved > 1 ? 's' : ''} later` : 'at the end' };
   }
   return h;
 }
 
 function placeNote(h, dur) {
-  const c = CLEFS[tune().clef], p = fromDiatonic(h.pos + c.bottom);
-  const n = { ...p, alter: keyAlter(tune().key, p.step), dur };
+  const st = h.slot.st, view = M.staffView(store.tune, st);
+  const c = CLEFS[view.clef], p = fromDiatonic(h.pos + c.bottom);
+  const n = { ...p, alter: keyAlter(view.key, p.step), dur };
   stopPlayback();
   if (h.slot.free) {
-    const r = M.insertAtTick(tune(), h.slot.tick, n);
-    if (!r.error) apply(r, { type: 'note', index: r.tune.events.length - 1 }, n); else warnFull();
-  } else apply(M.insert(tune(), h.slot.index, n), { type: 'note', index: h.slot.index }, n);
+    const r = M.insertAtTick(view, h.slot.tick, n);
+    if (!r.error) apply(r, { type: 'note', index: r.tune.events.length - 1 }, n, st); else warnFull();
+  } else apply(M.insert(view, h.slot.index, n), { type: 'note', index: h.slot.index }, n, st);
   paintOverlay();
 }
 
@@ -487,9 +528,9 @@ card.addEventListener('pointerdown', ev => {
   const hit = lay.geo.hitEvent(x, y);
   // Shift-click in the selected note's column adds a chord tone at that pitch.
   const sel = selected();
-  if (ev.shiftKey && sel && !sel.rest && (!hit || hit.ev !== selIndex())) {
-    const span = lay.geo.eventSpan(selIndex()), loc = lay.geo.locate(x, y);
-    if (span && loc && loc.k === span.k && x >= span.x1 && x <= span.x2) {
+  if (ev.shiftKey && sel && !sel.rest && (!hit || hit.s !== staffIdx() || hit.ev !== selIndex())) {
+    const span = lay.geo.eventSpan(selIndex(), staffIdx()), loc = lay.geo.locate(x, y);
+    if (span && loc && loc.k === span.k && loc.s === staffIdx() && x >= span.x1 && x <= span.x2) {
       const c = CLEFS[tune().clef], d = clampDiatonic(tune().clef, loc.pos + c.bottom), p = fromDiatonic(d);
       edit(() => addTone({ ...p, alter: keyAlter(tune().key, p.step) }))();
       ev.preventDefault();
@@ -498,11 +539,11 @@ card.addEventListener('pointerdown', ev => {
   }
   if (hit) {
     stopPlayback();
-    select(hit.ev, hit.tone);
+    select(hit.ev, hit.tone, hit.s);
     const e = tune().events[hit.ev];
     if (!e.rest) {
       const d0 = diatonic(M.pitchesOf(e)[hit.tone]);
-      drag = { kind: 'pitch', id: ev.pointerId, index: hit.ev, tone: hit.tone, startY: y, original: tune(), startD: d0, lastD: d0 };
+      drag = { kind: 'pitch', id: ev.pointerId, index: hit.ev, tone: hit.tone, startY: y, original: store.tune, startD: d0, lastD: d0 };
     }
   } else {
     hover = hoverAt(ev, false);
@@ -526,7 +567,7 @@ card.addEventListener('pointermove', ev => {
     const p = { ...fromDiatonic(d), alter: keyAlter(tune().key, fromDiatonic(d).step) };
     const r = M.setTonePitch(tune(), drag.index, drag.tone, p);
     if (r.error) return;                       // would land on another chord note: skip that position
-    store.tune = r.tune;
+    store.tune = M.withStaffView(store.tune, staffIdx(), r.tune);
     render();
     if (previewOn) preview(p);
   }
@@ -539,7 +580,7 @@ function endDrag(ev) {
     const h = hover; hover = null;
     if (h && overStaff(ev)) placeNote(h, inputDur); else paintOverlay();
   } else if (d.kind === 'pitch' && d.moved) {
-    const final = tune();
+    const final = store.tune;
     store.tune = d.original;
     store.commit(final);
   }
@@ -612,11 +653,13 @@ $('key').innerHTML = KEY_NAMES.map((_, i) => `<option value="${i - 7}">${keyLabe
 $('key').onchange = e => setField({ key: +e.target.value });
 $('clefT').onclick = () => tune().clef !== 'treble' && setField({ clef: 'treble' });
 $('clefB').onclick = () => tune().clef !== 'bass' && setField({ clef: 'bass' });
+$('staves1').onclick = () => { stopPlayback(); setStaves(1); };
+$('staves2').onclick = () => { stopPlayback(); setStaves(2); };
 $('time').onchange = e => {
   stopPlayback();
-  const r = M.setTime(tune(), e.target.value);
+  const r = M.setTime(store.tune, e.target.value);
   if (r.error) { toast({ kind: 'warn', title: "The tune doesn't fit", body: `It needs more than 12 measures in ${e.target.value}.` }); sync(); return; }
-  apply(r);
+  applyWhole(r);
   if (r.expanded) toast({ title: `Expanded to ${r.expanded} measures to fit` });
 };
 $('mUp').onclick = () => { stopPlayback(); setMeasures(tune().measures + 1); };
@@ -643,7 +686,7 @@ $('newCancel').onclick = () => { $('newPop').hidden = true; };
 $('newOk').onclick = () => {
   $('newPop').hidden = true;
   stopPlayback();
-  store.commit(M.defaultTune(), { type: 'caret', index: 0 });
+  store.commit(M.defaultTune(), { type: 'caret', index: 0, staff: 0 });
 };
 document.addEventListener('pointerdown', e => {
   if (!$('newPop').hidden && !e.target.closest('.pop-wrap')) $('newPop').hidden = true;

@@ -40,7 +40,9 @@
         <div class="stepper"><button id="bpmDown" aria-label="Slower">−</button><label class="val"><span class="mg">&#xECA5;</span>=<input id="bpm" type="number" min="40" max="240" inputmode="numeric" aria-label="Tempo in BPM"></label><button id="bpmUp" aria-label="Faster">+</button></div>
         <span class="muted" id="tempoWord"></span></div>
       <label class="field"><span class="lbl">Key</span><select id="key" class="select"></select></label>
-      <div class="field"><span class="lbl">Clef</span>
+      <div class="field"><span class="lbl">Staves</span>
+        <div class="seg" role="group" aria-label="Staves"><button id="staves1" title="One staff" aria-label="One staff">1</button><button id="staves2" title="Two staves, played together" aria-label="Two staves">2</button></div></div>
+      <div class="field"><span class="lbl" id="clefLbl">Clef</span>
         <div class="seg" role="group" aria-label="Clef"><button id="clefT" title="Treble clef" aria-label="Treble clef"><span class="mg g">&#xE050;</span></button><button id="clefB" title="Bass clef" aria-label="Bass clef"><span class="mg f">&#xE062;</span></button></div></div>
       <label class="field"><span class="lbl">Time</span><select id="time" class="select"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
       <div class="field"><span class="lbl">Measures</span>
@@ -113,6 +115,7 @@
       <div>
         <h3>Move &amp; edit</h3>
         <div class="krow"><span>Previous / next note</span><span class="keys"><kbd>←</kbd><kbd>→</kbd></span></div>
+        <div class="krow"><span>Upper / lower staff</span><span class="keys"><kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd></span></div>
         <div class="krow"><span>Caret to start / end</span><span class="keys"><kbd>Home</kbd><kbd>End</kbd></span></div>
         <div class="krow"><span>Swap with neighbour</span><span class="keys"><kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd></span></div>
         <div class="krow"><span>Delete (chord note, or note + gap)</span><span class="keys"><kbd>⌫</kbd></span></div>

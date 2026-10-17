@@ -4,6 +4,7 @@ import { TICKS_PER_MEASURE, TICKS_TO_DUR, spell, spellAligned, ticksOf } from '.
 
 export const MAX_MEASURES = 12;
 
+// staff2 is absent for a one-staff tune.
 export const defaultTune = () => ({ title: '', bpm: 100, key: 0, clef: 'treble', time: '4/4', measures: 4, events: [] });
 
 export const measureTicks = t => TICKS_PER_MEASURE[t.time];
@@ -86,12 +87,14 @@ export function setMeasures(tune, n) {
   if (n < 1 || n > MAX_MEASURES) return { tune };
   const next = { ...tune, measures: n };
   const fitted = fit(tune.events, capacity(next));
-  return fitted ? { tune: { ...next, events: fitted } } : { error: 'measure-not-empty' };
+  const fitted2 = tune.staff2 && fit(tune.staff2.events, capacity(next));
+  if (!fitted || (tune.staff2 && !fitted2)) return { error: 'measure-not-empty' };
+  return { tune: { ...next, events: fitted, ...(tune.staff2 && { staff2: { ...tune.staff2, events: fitted2 } }) } };
 }
 
 /** Change time signature; grows the measure count if needed. */
 export function setTime(tune, time) {
-  const mt = TICKS_PER_MEASURE[time], u = used(tune.events);
+  const mt = TICKS_PER_MEASURE[time], u = Math.max(used(tune.events), tune.staff2 ? used(tune.staff2.events) : 0);
   const needed = Math.max(tune.measures, Math.ceil(u / mt));
   if (needed > MAX_MEASURES) return { error: ERR_FULL };
   return { tune: { ...tune, time, measures: needed }, expanded: needed !== tune.measures ? needed : 0 };
@@ -135,4 +138,38 @@ export function setTonePitch(tune, i, t, pitch) {
   if (ps.some((p, k) => k !== t && sameLine(p, pitch))) return { error: 'duplicate' };
   ps[t] = pitch;
   return replace(tune, i, withPitches(e, ps));
+}
+
+// ---------- second staff ----------
+// Staff 0 is tune.clef + tune.events (as before); an optional second staff is tune.staff2 = {clef, events}.
+// Both staves share every other header field, including measures and time, so they have the same capacity.
+// Edit ops above work on one staff at a time through a view: a tune whose clef/events are that staff's.
+export const MAX_STAVES = 2;
+export const staffCount = t => (t.staff2 ? 2 : 1);
+export const staffEvents = (t, s) => (s ? t.staff2.events : t.events);
+export const staffList = t => [{ clef: t.clef, events: t.events }, ...(t.staff2 ? [t.staff2] : [])];
+
+/** The tune as seen from staff s: header fields plus that staff's clef and events. */
+export const staffView = (t, s) => (s && t.staff2 ? { ...t, clef: t.staff2.clef, events: t.staff2.events } : t);
+
+/** Write a view (possibly with header changes) back into the tune as staff s. */
+export function withStaffView(t, s, view) {
+  if (!s) return { ...view, staff2: t.staff2 };
+  const { clef, events, staff2, ...header } = view;
+  return { ...header, clef: t.clef, events: t.events, staff2: { clef, events } };
+}
+
+const restsOnly = events => events.every(e => e.rest);
+
+export function addStaff(t) {
+  if (t.staff2) return { tune: t };
+  return { tune: { ...t, staff2: { clef: t.clef === 'bass' ? 'treble' : 'bass', events: [] } } };
+}
+
+/** Remove staff s. Only a staff holding nothing but rests can be removed. */
+export function removeStaff(t, s) {
+  if (!t.staff2) return { tune: t };
+  if (!restsOnly(staffEvents(t, s))) return { error: 'staff-not-empty' };
+  const { staff2, ...rest } = t;
+  return { tune: s ? rest : { ...rest, clef: staff2.clef, events: staff2.events } };
 }

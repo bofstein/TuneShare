@@ -78,6 +78,21 @@ test('a tied chord ties every tone', () => {
   const t = tune('C4:q C4:q C4:q E4:h');
   t.events[3].tones = [{ step: 4, oct: 4, alter: 0 }];
   const lay = layout(t, { width: 1000 });
-  const ties = [...lay.events.get(3)].filter(i => i.t === 'path');
+  const ties = [...lay.events[0].get(3)].filter(i => i.t === 'path');
   assert.equal(ties.length, 2);
+});
+
+test('two staves share bar lines and line up notes that sound together', () => {
+  const t = { ...tune('C5:q F#5:q G5:h'), staff2: { clef: 'bass', events: tune('C3:q D3:q E3:h').events } };
+  const lay = layout(t, { width: 1000 });
+  assert.equal(lay.geo.nStaves, 2);
+  const headX = (s, i) => lay.events[s].get(i).find(it => it.t === 'glyph' && [G.nhB, G.nhH].includes(it.g)).x;
+  // F#5 gets an accidental allowance; the bass note at the same beat moves with it.
+  assert.equal(headX(0, 1), headX(1, 1));
+  assert.equal(headX(0, 2), headX(1, 2));
+  const loc = lay.geo.locate(lay.geo.tx(0, 4), lay.geo.Y(0, 4, 1));
+  assert.equal(loc.s, 1); assert.equal(loc.pos, 4);
+  assert.equal(lay.geo.locate(lay.geo.tx(0, 4), lay.geo.Y(0, 4, 0)).s, 0);
+  const hit = lay.geo.hitEvent(headX(1, 0) + 5, lay.geo.Y(0, 3, 1));
+  assert.deepEqual(hit && [hit.s, hit.ev], [1, 0]);
 });
