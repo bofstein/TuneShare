@@ -114,3 +114,12 @@ test('two staves each draw their own clef and notes, whichever staff is being ed
   assert.equal(view.staff2, undefined);
   assert.deepEqual(clefs(layout(view, { width: 1000 })), [G.fClef]);
 });
+
+test('chord column is narrow so the gap between notes stays free for inserting a beat (#23)', () => {
+  const lay = layout(tune('C4:q D4:q E4:q F4:q'), { width: 1000, perSys: 4, sp: 10 });
+  const a = lay.geo.eventSpan(1), b = lay.geo.eventSpan(2), hw = 1.18 * 10;
+  assert.ok(a.x2 < b.x1);
+  // The free strip between neighbours is at least a head wide, and a head still sits inside its own column.
+  assert.ok(b.x1 - a.x2 >= hw);
+  assert.ok(a.x1 < a.x && a.x + hw < a.x2);
+});

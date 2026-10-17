@@ -356,11 +356,13 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
       const m = Math.min(Math.floor(abs / tpm), tune.measures - 1), tick = abs - m * tpm;
       return { k: sysOf(m), x: tx(m, tick, false) - (tick ? 0.9 : 0.7) * sp };
     },
-    /** Horizontal extent of an event's first piece: {k, x1, x2}. */
+    /** Horizontal extent of an event's first piece: {k, x1, x2}. The head plus half a head's width
+     *  either side; the rest of the gap between neighbours stays free for inserting a new beat. */
     eventSpan(i, s = 0) {
       const p = staves[s].pcs.find(q => q.ev === i);
       if (!p) return null;
-      return { k: p.k, x: p.x, x1: p.x - (p.hw || sp), x2: p.x + 2 * (p.hw || sp) };
+      const hw = p.hw || sp;
+      return { k: p.k, x: p.x, x1: p.x - hw / 2, x2: p.x + 1.5 * hw };
     },
   };
 
