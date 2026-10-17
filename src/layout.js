@@ -360,7 +360,7 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     eventSpan(i, s = 0) {
       const p = staves[s].pcs.find(q => q.ev === i);
       if (!p) return null;
-      return { k: p.k, x1: p.x - (p.hw || sp), x2: p.x + 2 * (p.hw || sp) };
+      return { k: p.k, x: p.x, x1: p.x - (p.hw || sp), x2: p.x + 2 * (p.hw || sp) };
     },
   };
 

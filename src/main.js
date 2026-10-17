@@ -24,6 +24,7 @@ let inputDur = 2;               // duration for the next note; follows the selec
 let previewOn = true, loopOn = false;
 let playing = [];               // "staff:index" keys of the events sounding now
 let lay = null;
+let chordHover = null;         // {st, ev, pitch, k, x, pos} ghost chord tone while hovering above/below a note
 let hover = null;               // {slot, pos} ghost while hovering / placing / dragging a chip
 let drag = null;                // active pointer interaction
 
@@ -333,7 +334,9 @@ function paintOverlay() {
   if (!ov || !lay) return;
   const o = {};
   const hw = 1.18 * lay.sp;
-  if (hover) {
+  if (chordHover) {
+    o.ghost = { k: chordHover.k, s: chordHover.st, x: chordHover.x, pos: chordHover.pos, ticks: DUR_TICKS[inputDur] };
+  } else if (hover) {
     const { slot, pos, tip, rest } = hover;
     o.marker = slot.free ? null : { k: slot.k, s: slot.st, x: slot.x };
     o.ghost = { k: slot.k, s: slot.st, x: slot.free ? slot.x : slot.x - hw / 2, pos, ticks: DUR_TICKS[activeDurForGhost()], rest };
@@ -500,6 +503,24 @@ function hoverAt(ev, withTip) {
   return h;
 }
 
+/** Pointer in the column of a note but not on a head (above/below it) → the chord tone a click would add. */
+function chordTargetAt(ev, x, y) {
+  if (!lay || ev.pointerType === 'touch') return null;
+  const loc = lay.geo.locate(x, y);
+  if (!loc) return null;
+  const evs = M.staffEvents(store.tune, loc.s);
+  for (let i = 0; i < evs.length; i++) {
+    const e = evs[i], span = lay.geo.eventSpan(i, loc.s);
+    if (!span || span.k !== loc.k || x < span.x1 || x > span.x2) continue;
+    if (e.rest) return null;
+    const view = M.staffView(store.tune, loc.s), c = CLEFS[view.clef];
+    const d = clampDiatonic(view.clef, loc.pos + c.bottom), p = fromDiatonic(d);
+    if (M.pitchesOf(e).some(q => diatonic(q) === d) || M.pitchesOf(e).length >= M.MAX_CHORD_NOTES) return null;
+    return { st: loc.s, ev: i, pitch: { ...p, alter: keyAlter(view.key, p.step) }, k: span.k, x: span.x, pos: d - c.bottom };
+  }
+  return null;
+}
+
 function placeNote(h, dur) {
   const st = h.slot.st, view = M.staffView(store.tune, st);
   const c = CLEFS[view.clef], p = fromDiatonic(h.pos + c.bottom);
@@ -516,11 +537,13 @@ card.addEventListener('pointermove', ev => {
   if (drag) return;
   if (ev.pointerType !== 'mouse' || !lay) return;
   const { x, y } = svgPoint(ev);
-  if (lay.geo.hitEvent(x, y)) { if (hover) { hover = null; paintOverlay(); } return; }
+  if (lay.geo.hitEvent(x, y)) { if (hover || chordHover) { hover = chordHover = null; paintOverlay(); } return; }
+  chordHover = chordTargetAt(ev, x, y);
+  if (chordHover) { hover = null; paintOverlay(); return; }
   hover = hoverAt(ev, false);
   paintOverlay();
 });
-card.addEventListener('pointerleave', () => { if (!drag && hover) { hover = null; paintOverlay(); } });
+card.addEventListener('pointerleave', () => { if (!drag && (hover || chordHover)) { hover = chordHover = null; paintOverlay(); } });
 
 card.addEventListener('pointerdown', ev => {
   if (ev.button !== 0 || !lay) return;
@@ -537,6 +560,15 @@ card.addEventListener('pointerdown', ev => {
       ev.preventDefault();
       return;
     }
+  }
+  const ct = !hit && !ev.shiftKey && chordTargetAt(ev, x, y);
+  if (ct) {
+    stopPlayback();
+    select(ct.ev, 0, ct.st);
+    chordHover = null;
+    edit(() => addTone(ct.pitch))();
+    ev.preventDefault();
+    return;
   }
   if (hit) {
     stopPlayback();
