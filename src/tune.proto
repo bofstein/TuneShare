@@ -1,0 +1,18 @@
+syntax = "proto3";
+package tuneshare;
+
+// Zero values are the defaults and are never written (proto3 semantics),
+// so an empty tune is an empty message: the whole URL fragment is "#1."
+message Tune {
+  string   title    = 1;  // ≤ 60 chars, UTF-8
+  uint32   bpm      = 2;  // 40–240; 0/absent = 100
+  sint32   key      = 3;  // −7..7, number of flats (−) or sharps (+); 0 = C major / A minor
+  Clef     clef     = 4;
+  TimeSig  time     = 5;
+  uint32   measures = 6;  // 1–12; 0/absent = 4
+  bytes    events   = 7;  // packed 12-bit events, see below
+  // 8+ reserved for future fields (e.g. tie flags, swing, instrument)
+}
+
+enum Clef    { TREBLE = 0; BASS = 1; }
+enum TimeSig { FOUR_FOUR = 0; THREE_FOUR = 1; TWO_FOUR = 2; SIX_EIGHT = 3; }

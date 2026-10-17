@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TuneShare</title>
+<meta name="description" content="Write a short melody, play it, and share it as a link.">
+<link rel="preload" href="assets/fonts/tuneshare-glyphs.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M13 22a4 3 0 1 1-2-2.6V7h2l7 4-1 1.8-6-3.3z' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+<div class="app">
+  <header class="app-head">
+    <div class="brand"><span class="logo"><span class="mg">&#xECA7;</span></span><span class="brand-name">TuneShare</span></div>
+    <input id="title" class="title-field" maxlength="60" placeholder="Untitled tune" aria-label="Title" autocomplete="off" spellcheck="false">
+    <div class="spacer"></div>
+    <button class="icon-btn hide-sm" id="undo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+    <button class="icon-btn hide-sm" id="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+    <button class="icon-btn hide-sm" id="help" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>
+    <div class="pop-wrap">
+      <button class="btn hide-sm" id="new">New</button>
+      <div class="popover" id="newPop" hidden>
+        <p>Start a new tune? You can undo this.</p>
+        <div class="pop-actions"><button class="btn" id="newCancel">Cancel</button><button class="btn primary" id="newOk">Start new</button></div>
+      </div>
+    </div>
+    <button class="btn primary" id="copy"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span class="copy-label">Copy link</span></button>
+  </header>
+
+  <div class="tune-bar">
+    <div class="transport">
+      <button class="play-btn" id="play" aria-label="Play" title="Play / stop (Space)"></button>
+      <button class="icon-btn" id="loop" title="Loop (L)" aria-label="Loop" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></button>
+      <button class="icon-btn on" id="preview" title="Preview notes while editing" aria-label="Preview sound" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path class="wave" d="M15.5 8.5a5 5 0 0 1 0 7"/><path class="wave" d="M19 5a10 10 0 0 1 0 14"/></svg></button>
+    </div>
+    <button class="settings-toggle" id="settingsToggle" aria-expanded="false" aria-controls="settings"><span id="settingsSummary"></span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+    <div class="settings" id="settings">
+      <div class="field"><span class="lbl">Tempo</span>
+        <div class="stepper"><button id="bpmDown" aria-label="Slower">−</button><label class="val"><span class="mg">&#xECA5;</span>=<input id="bpm" type="number" min="40" max="240" inputmode="numeric" aria-label="Tempo in BPM"></label><button id="bpmUp" aria-label="Faster">+</button></div>
+        <span class="muted" id="tempoWord"></span></div>
+      <label class="field"><span class="lbl">Key</span><select id="key" class="select"></select></label>
+      <div class="field"><span class="lbl">Clef</span>
+        <div class="seg" role="group" aria-label="Clef"><button id="clefT" title="Treble clef" aria-label="Treble clef"><span class="mg g">&#xE050;</span></button><button id="clefB" title="Bass clef" aria-label="Bass clef"><span class="mg f">&#xE062;</span></button></div></div>
+      <label class="field"><span class="lbl">Time</span><select id="time" class="select"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
+      <div class="field"><span class="lbl">Measures</span>
+        <div class="stepper"><button id="mDown" aria-label="Remove measure">−</button><span class="val" id="measures"></span><button id="mUp" aria-label="Add measure">+</button></div></div>
+    </div>
+  </div>
+
+  <div class="note-bar" id="noteBar">
+    <div class="readout" id="readout"></div>
+    <div class="tool-rows">
+      <div class="tool-row">
+        <div class="grp" role="group" aria-label="Length">
+          <button class="tool" data-dur="4" title="Whole (1)" aria-label="Whole"><span class="mg nv">&#xECA2;</span><span class="k">1</span></button>
+          <button class="tool" data-dur="3" title="Half (2)" aria-label="Half"><span class="mg nv">&#xECA3;</span><span class="k">2</span></button>
+          <button class="tool" data-dur="2" title="Quarter (3)" aria-label="Quarter"><span class="mg nv">&#xECA5;</span><span class="k">3</span></button>
+          <button class="tool" data-dur="1" title="Eighth (4)" aria-label="Eighth"><span class="mg nv">&#xECA7;</span><span class="k">4</span></button>
+          <button class="tool" data-dur="0" title="16th (5)" aria-label="16th"><span class="mg nv">&#xECA9;</span><span class="k">5</span></button>
+        </div>
+        <div class="grp">
+          <button class="tool" id="dot" title="Dot (.)" aria-label="Dotted"><span class="mg dt">&#xECB7;</span><span class="k">.</span></button>
+          <button class="tool" id="rest" title="Rest (R)" aria-label="Rest"><span class="mg rst">&#xE4E5;</span><span class="k">R</span></button>
+        </div>
+      </div>
+      <div class="vsep hide-sm"></div>
+      <div class="tool-row">
+        <div class="grp" role="group" aria-label="Accidental">
+          <button class="tool" data-alter="-1" title="Flat (-)" aria-label="Flat"><span class="mg acc">&#xE260;</span><span class="k">-</span></button>
+          <button class="tool" data-alter="0" title="Natural (=)" aria-label="Natural"><span class="mg acc">&#xE261;</span><span class="k">=</span></button>
+          <button class="tool" data-alter="1" title="Sharp (#)" aria-label="Sharp"><span class="mg acc">&#xE262;</span><span class="k">#</span></button>
+        </div>
+        <div class="grp">
+          <button class="tool" id="octUp" title="Octave up (Shift+↑)" aria-label="Octave up"><span class="oct"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>8</span></button>
+          <button class="tool" id="octDown" title="Octave down (Shift+↓)" aria-label="Octave down"><span class="oct"><svg viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>8</span></button>
+        </div>
+        <div class="grp">
+          <button class="tool show-sm" id="undoSm" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+          <button class="tool" id="del" title="Delete (Backspace)" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="staff-card" id="staffCard" tabindex="0" role="application" aria-label="Staff">
+    <div id="staffHost"></div>
+    <div class="empty-hint" id="emptyHint" hidden>Type a letter <kbd>A</kbd>–<kbd>G</kbd>, click the staff, or drag a note here to start</div>
+  </main>
+  <div class="hint" id="hint"></div>
+  <p class="sr-only" id="announce" aria-live="polite"></p>
+</div>
+
+<div class="toast-region" id="toasts" aria-live="polite"></div>
+
+<div class="scrim" id="sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-head"><h2 id="sheetTitle">Keyboard shortcuts</h2><div class="spacer"></div><button class="icon-btn" id="sheetClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+    <div class="cols">
+      <div>
+        <h3>Add notes</h3>
+        <div class="krow"><span>Insert note (follows key)</span><span class="keys"><kbd>A</kbd>–<kbd>G</kbd></span></div>
+        <div class="krow"><span>Insert rest / make rest</span><span class="keys"><kbd>R</kbd></span></div>
+        <div class="krow"><span>Whole · half · quarter · 8th · 16th</span><span class="keys"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd></span></div>
+        <div class="krow"><span>Toggle dot</span><span class="keys"><kbd>.</kbd></span></div>
+        <h3>Change pitch</h3>
+        <div class="krow"><span>Up / down a step</span><span class="keys"><kbd>↑</kbd><kbd>↓</kbd></span></div>
+        <div class="krow"><span>Up / down an octave</span><span class="keys"><kbd>Shift</kbd>+<kbd>↑</kbd><kbd>↓</kbd></span></div>
+        <div class="krow"><span>Sharp · flat · natural</span><span class="keys"><kbd>#</kbd><kbd>-</kbd><kbd>=</kbd></span></div>
+      </div>
+      <div>
+        <h3>Move &amp; edit</h3>
+        <div class="krow"><span>Previous / next note</span><span class="keys"><kbd>←</kbd><kbd>→</kbd></span></div>
+        <div class="krow"><span>Caret to start / end</span><span class="keys"><kbd>Home</kbd><kbd>End</kbd></span></div>
+        <div class="krow"><span>Swap with neighbour</span><span class="keys"><kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd></span></div>
+        <div class="krow"><span>Delete (closes the gap)</span><span class="keys"><kbd>⌫</kbd></span></div>
+        <div class="krow"><span>Undo / redo</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>Z</kbd> <kbd>Ctrl</kbd>+<kbd>Y</kbd></span></div>
+        <h3>Playback</h3>
+        <div class="krow"><span>Play / stop</span><span class="keys"><kbd>Space</kbd></span></div>
+        <div class="krow"><span>Loop</span><span class="keys"><kbd>L</kbd></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

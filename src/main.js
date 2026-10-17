@@ -1,0 +1,613 @@
+// App controller: wires the store, staff rendering, input, toolbar and playback.
+import {
+  CLEFS, DUR_NAME, DUR_TICKS, KEY_NAMES, canDot, clampDiatonic, diatonic, fromDiatonic, keyAlter, keyLabel,
+  keyName, pitchName, tempoWord, toggleDot, undotted,
+} from './theory.js';
+import * as M from './model.js';
+import { decode } from './codec.js';
+import { layout, G } from './layout.js';
+import { renderStaff, renderOverlay } from './render.js';
+import { Player, preview } from './audio.js';
+import { Store } from './store.js';
+
+const $ = id => document.getElementById(id);
+const host = $('staffHost'), card = $('staffCard');
+
+// ---------- state ----------
+const initial = decode(location.hash);
+const store = new Store(initial.tune);
+store.lastHash = location.hash;
+const player = new Player();
+let inputDur = 2;               // duration for the next note when nothing is selected
+let previewOn = true, loopOn = false;
+let playing = -1;               // event index currently sounding, -1 = none
+let lay = null;
+let hover = null;               // {slot, pos} ghost while hovering / placing / dragging a chip
+let drag = null;                // active pointer interaction
+
+const tune = () => store.tune;
+const selIndex = () => (store.cursor.type === 'note' ? store.cursor.index : -1);
+const selected = () => tune().events[selIndex()] || null;
+const insertIndex = () => (store.cursor.type === 'note' ? store.cursor.index + 1 : store.cursor.index);
+const activeDur = () => (selected() ? selected().dur : inputDur);
+
+// ---------- toasts ----------
+const ICON_WARN = '<svg viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+const ICON_OK = '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>';
+let toastTimer = 0;
+function toast({ kind = 'info', title, body = '', action, onAction, ms }) {
+  const region = $('toasts');
+  clearTimeout(toastTimer);
+  region.innerHTML = `<div class="toast ${kind}" role="status"><span class="ti">${kind === 'info' ? ICON_OK : ICON_WARN}</span>
+    <div class="tx"><b></b><span></span></div>${action ? '<button class="act"></button>' : ''}
+    <button class="x" aria-label="Dismiss"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>`;
+  const el = region.firstElementChild;
+  el.querySelector('b').textContent = title;
+  el.querySelector('.tx span').textContent = body;
+  const close = () => { region.innerHTML = ''; };
+  if (action) { const b = el.querySelector('.act'); b.textContent = action; b.onclick = () => { close(); onAction(); }; }
+  el.querySelector('.x').onclick = close;
+  toastTimer = setTimeout(close, ms ?? (kind === 'info' ? 2500 : 6000));
+}
+
+function warnFull() {
+  const t = tune();
+  if (t.measures < M.MAX_MEASURES) {
+    toast({ kind: 'warn', title: 'Not enough room', body: `This would push notes past the end of bar ${t.measures}.`, action: 'Add measure', onAction: () => setMeasures(t.measures + 1) });
+  } else {
+    toast({ kind: 'warn', title: 'The tune is full', body: 'All 12 measures are used. Delete or shorten a note first.' });
+  }
+}
+
+// ---------- edits ----------
+function apply(result, cursor, sound) {
+  if (result.error) { if (result.error === M.ERR_FULL) warnFull(); return false; }
+  store.commit(result.tune, cursor);
+  if (sound && previewOn && !sound.rest) preview(sound);
+  return true;
+}
+
+function refDiatonic(index) {
+  for (let i = Math.min(index, tune().events.length - 1); i >= 0; i--) {
+    const e = tune().events[i];
+    if (!e.rest) return diatonic(e);
+  }
+  return CLEFS[tune().clef].middle;
+}
+
+function noteFor(step, ref) {
+  const base = step + 7 * Math.round((ref - step) / 7);
+  let d = base;
+  const c = CLEFS[tune().clef];
+  while (d < c.min) d += 7;
+  while (d > c.max) d -= 7;
+  return { ...fromDiatonic(d), alter: keyAlter(tune().key, step) };
+}
+
+function typeLetter(step) {
+  const sel = selected();
+  if (sel && sel.rest) {
+    const n = { ...noteFor(step, refDiatonic(selIndex() - 1)), dur: sel.dur };
+    apply(M.replace(tune(), selIndex(), n), null, n);
+    return;
+  }
+  const idx = insertIndex();
+  const n = { ...noteFor(step, refDiatonic(idx - 1)), dur: activeDur() };
+  apply(M.insert(tune(), idx, n), { type: 'note', index: idx }, n);
+}
+
+function typeRest() {
+  const sel = selected();
+  if (sel && !sel.rest) { apply(M.replace(tune(), selIndex(), { rest: true, dur: sel.dur })); return; }
+  const idx = insertIndex();
+  apply(M.insert(tune(), idx, { rest: true, dur: activeDur() }), { type: 'note', index: idx });
+}
+
+function setDur(base) {
+  const sel = selected();
+  if (sel) {
+    const dur = sel.dur >= 5 && canDot(base) ? base + 4 : base;
+    apply(M.setDuration(tune(), selIndex(), dur));
+  } else { inputDur = base; sync(); }
+}
+
+function toggleDotted() {
+  const sel = selected();
+  if (sel) { if (canDot(sel.dur) || sel.dur >= 5) apply(M.setDuration(tune(), selIndex(), toggleDot(sel.dur))); }
+  else { inputDur = toggleDot(inputDur); sync(); }
+}
+
+function movePitch(steps) {
+  const sel = selected();
+  if (!sel || sel.rest) return;
+  const d = clampDiatonic(tune().clef, diatonic(sel) + steps);
+  const p = fromDiatonic(d);
+  const n = { ...sel, ...p, alter: Math.abs(steps) === 7 ? sel.alter : keyAlter(tune().key, p.step) };
+  apply(M.replace(tune(), selIndex(), n), null, n);
+}
+
+function setAlter(a) {
+  const sel = selected();
+  if (!sel || sel.rest) return;
+  const keyDefault = keyAlter(tune().key, sel.step);
+  const n = { ...sel, alter: sel.alter === a && a !== keyDefault ? keyDefault : a };
+  apply(M.replace(tune(), selIndex(), n), null, n);
+}
+
+function deleteSel() {
+  const i = selIndex();
+  if (i < 0) {
+    // Backspace at the caret deletes the event before it.
+    const c = store.cursor.index;
+    if (c > 0) apply(M.remove(tune(), c - 1), { type: 'caret', index: c - 1 });
+    return;
+  }
+  apply(M.remove(tune(), i), i > 0 ? { type: 'note', index: i - 1 } : { type: 'caret', index: 0 });
+}
+
+function swapSel(dir) {
+  const i = selIndex();
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= tune().events.length) return;
+  apply(M.swap(tune(), i, dir), { type: 'note', index: j });
+}
+
+function moveCursor(dir) {
+  const c = store.cursor, n = tune().events.length;
+  if (!n) return;
+  let i;
+  if (c.type === 'note') i = c.index + dir;
+  else i = dir > 0 ? c.index : c.index - 1;
+  if (i < 0) { store.setCursor({ type: 'caret', index: 0 }); return; }
+  if (i >= n) { store.setCursor({ type: 'caret', index: n }); return; }
+  select(i);
+}
+
+function select(i) {
+  store.setCursor({ type: 'note', index: i });
+  const e = tune().events[i];
+  if (e && !e.rest && previewOn && !player.playing) preview(e);
+}
+
+function setMeasures(n) {
+  const r = M.setMeasures(tune(), n);
+  if (r.error) { toast({ kind: 'warn', title: `Measure ${tune().measures} isn't empty`, body: 'Delete its notes first.', ms: 4000 }); return; }
+  apply(r);
+}
+
+function edit(fn) { return () => { stopPlayback(); fn(); }; }
+
+// ---------- playback ----------
+function togglePlay() {
+  if (player.playing) { stopPlayback(); return; }
+  const from = Math.max(0, selIndex());
+  player.play(tune(), from, {
+    loop: () => loopOn,
+    onEvent: i => { if (i !== playing) { playing = i; paintClasses(); scrollToEvent(i); } },
+    onEnd: () => { playing = -1; paintClasses(); syncPlay(); },
+  });
+  syncPlay();
+}
+function stopPlayback() {
+  if (!player.playing) return;
+  player.stop(); playing = -1; paintClasses(); syncPlay();
+}
+function scrollToEvent(i) {
+  const g = host.querySelector(`.ev[data-i="${i}"]`);
+  if (g && g.scrollIntoView) g.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// ---------- rendering ----------
+function render() {
+  const w = Math.max(280, host.clientWidth);
+  const perSys = w >= 860 ? 4 : w >= 560 ? 3 : 2;
+  const sp = w >= 560 ? 10 : 8;
+  lay = layout(tune(), { width: w, perSys, sp });
+  host.innerHTML = renderStaff(lay);
+  paintClasses();
+  paintOverlay();
+  sync();
+}
+
+function paintClasses() {
+  host.querySelectorAll('.ev').forEach(g => {
+    const i = +g.dataset.i;
+    g.classList.toggle('sel', i === selIndex());
+    g.classList.toggle('play', i === playing);
+  });
+}
+
+/** Compute where an insert at (loc) would go: {index|tick, k, x}. */
+function slotFor(loc) {
+  const { geo } = lay, ev = tune().events;
+  if (loc.abs >= geo.used) {
+    const tick = Math.min(Math.round(loc.abs / 2) * 2, M.capacity(tune()) - 1);
+    if (tick <= geo.used) {
+      const s = geo.slotX(geo.used);
+      return { index: ev.length, k: s.k, x: s.x, abs: geo.used };
+    }
+    const m = Math.floor(tick / geo.tpm);
+    return { tick, k: geo.systems.findIndex(s => m >= s.mFirst && m <= s.mLast), x: geo.tx(m, tick - m * geo.tpm), abs: tick, free: true };
+  }
+  let j = 0;
+  while (j < ev.length - 1 && geo.starts[j + 1] <= loc.abs) j++;
+  const len = DUR_TICKS[ev[j].dur];
+  const index = loc.abs - geo.starts[j] < len / 2 ? j : j + 1;
+  const abs = index < ev.length ? geo.starts[index] : geo.used;
+  const s = geo.slotX(abs);
+  return { index, k: s.k, x: s.x, abs };
+}
+
+function ghostPos(loc) {
+  const c = CLEFS[tune().clef];
+  return clampDiatonic(tune().clef, loc.pos + c.bottom) - c.bottom;
+}
+
+function paintOverlay() {
+  const ov = host.querySelector('.overlay');
+  if (!ov || !lay) return;
+  const o = {};
+  const hw = 1.18 * lay.sp;
+  if (hover) {
+    const { slot, pos, tip, rest } = hover;
+    o.marker = slot.free ? null : { k: slot.k, x: slot.x };
+    o.ghost = { k: slot.k, x: slot.free ? slot.x : slot.x - hw / 2, pos, ticks: DUR_TICKS[activeDurForGhost()], rest };
+    if (tip) o.tip = tip;
+  } else if (store.cursor.type === 'caret') {
+    const abs = store.cursor.index < tune().events.length ? lay.geo.starts[store.cursor.index] : lay.geo.used;
+    const s = lay.geo.slotX(Math.min(abs, M.capacity(tune()) - 1));
+    o.marker = { k: s.k, x: s.x, caret: true };
+  }
+  ov.innerHTML = renderOverlay(lay, o);
+}
+const activeDurForGhost = () => (drag && drag.kind === 'chip' ? drag.dur : inputDur);
+
+// ---------- toolbar / controls sync ----------
+const kbd = s => `<kbd>${s}</kbd>`;
+function sync() {
+  const t = tune(), sel = selected();
+  const dur = activeDur(), base = undotted(dur);
+  document.querySelectorAll('[data-dur]').forEach(b => b.classList.toggle('on', +b.dataset.dur === base));
+  $('dot').classList.toggle('on', dur >= 5);
+  $('dot').disabled = !canDot(dur) && dur < 5;
+  $('rest').classList.toggle('on', !!(sel && sel.rest));
+  const isNote = !!(sel && !sel.rest);
+  document.querySelectorAll('[data-alter]').forEach(b => {
+    const a = +b.dataset.alter;
+    b.disabled = !isNote;
+    b.classList.toggle('on', isNote && sel.alter === a && a !== keyAlter(t.key, sel.step));
+  });
+  $('octUp').disabled = $('octDown').disabled = !isNote;
+  $('del').disabled = !t.events.length;
+  $('undo').disabled = $('undoSm').disabled = !store.undoStack.length;
+  $('redo').disabled = !store.redoStack.length;
+
+  const ro = $('readout');
+  if (sel) {
+    const st = lay ? lay.geo.starts[selIndex()] : 0, tpm = M.measureTicks(t);
+    const bt = (st % tpm) / 4 + 1;
+    const frac = bt % 1, beat = Math.floor(bt) + (frac === 0.5 ? '½' : frac === 0.25 ? '¼' : frac === 0.75 ? '¾' : '');
+    ro.className = 'readout';
+    ro.innerHTML = `<span></span><span class="sub">bar ${Math.floor(st / tpm) + 1} · beat ${beat}</span>`;
+    ro.firstChild.textContent = (sel.rest ? 'Rest' : pitchName(sel)) + ' · ' + DUR_NAME[sel.dur];
+  } else {
+    ro.className = 'readout idle';
+    ro.innerHTML = `<span>Next note: ${DUR_NAME[inputDur]}</span><span class="sub">type A–G or click the staff</span>`;
+  }
+
+  $('hint').innerHTML = sel
+    ? `<span>${kbd('↑')}${kbd('↓')} pitch</span><span>${kbd('1')}–${kbd('5')} length</span><span>${kbd('#')} ${kbd('-')} ${kbd('=')} accidentals</span><span>${kbd('A')}–${kbd('G')} insert after</span><span>${kbd('⌫')} delete</span><span>${kbd('?')} all shortcuts</span>`
+    : `<span>Type ${kbd('A')}–${kbd('G')} to add notes</span><span>Click the staff to place one</span><span>Drag a note from the toolbar</span><span>${kbd('Space')} play</span><span>${kbd('?')} all shortcuts</span>`;
+  $('emptyHint').hidden = t.events.length > 0;
+
+  if (document.activeElement !== $('title')) $('title').value = t.title;
+  if (document.activeElement !== $('bpm')) $('bpm').value = t.bpm;
+  $('tempoWord').textContent = tempoWord(t.bpm);
+  $('key').value = String(t.key);
+  $('clefT').classList.toggle('on', t.clef === 'treble');
+  $('clefB').classList.toggle('on', t.clef === 'bass');
+  $('time').value = t.time;
+  $('measures').textContent = t.measures;
+  $('mUp').disabled = t.measures >= M.MAX_MEASURES;
+  $('mDown').disabled = t.measures <= 1;
+  $('settingsSummary').innerHTML = `<span class="mg">${G.mQ}</span>=${t.bpm} · ${keyName(t.key).split(' / ')[0]} · ${t.time} · ${t.measures} bars`;
+  document.title = t.title ? `${t.title} — TuneShare` : 'TuneShare';
+  card.setAttribute('aria-label', sel ? `Staff. Selected: ${sel.rest ? 'rest' : pitchName(sel)}, ${DUR_NAME[sel.dur]}` : 'Staff');
+  syncPlay();
+}
+
+const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>';
+const STOP = '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>';
+function syncPlay() {
+  const b = $('play');
+  b.classList.toggle('playing', player.playing);
+  b.innerHTML = player.playing ? STOP : PLAY;
+  b.setAttribute('aria-label', player.playing ? 'Stop' : 'Play');
+  $('loop').classList.toggle('on', loopOn);
+  $('loop').setAttribute('aria-pressed', loopOn);
+  $('preview').classList.toggle('on', previewOn);
+  $('preview').setAttribute('aria-pressed', previewOn);
+}
+
+// ---------- keyboard ----------
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (t.closest && t.closest('input, select, textarea')) return;
+  if (!$('sheet').hidden) { if (e.key === 'Escape' || e.key === '?') closeSheet(); return; }
+  if (drag && e.key === 'Escape') { cancelDrag(); e.preventDefault(); return; }
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod) {
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { stopPlayback(); store.undo(); e.preventDefault(); }
+    else if ((k === 'z' && e.shiftKey) || k === 'y') { stopPlayback(); store.redo(); e.preventDefault(); }
+    return;
+  }
+  const key = e.key;
+  let handled = true;
+  if (/^[a-g]$/i.test(key) && !e.altKey) edit(() => typeLetter('CDEFGAB'.indexOf(key.toUpperCase())))();
+  else if (key === 'r' || key === 'R') edit(typeRest)();
+  else if (/^[1-5]$/.test(key)) edit(() => setDur([4, 3, 2, 1, 0][+key - 1]))();
+  else if (key === '.') edit(toggleDotted)();
+  else if (key === 'ArrowUp') edit(() => movePitch(e.shiftKey ? 7 : 1))();
+  else if (key === 'ArrowDown') edit(() => movePitch(e.shiftKey ? -7 : -1))();
+  else if (key === '#' || key === '+') edit(() => setAlter(1))();
+  else if (key === '-' || key === '_') edit(() => setAlter(-1))();
+  else if (key === '=' || key === 'n' || key === 'N') edit(() => setAlter(0))();
+  else if (key === 'ArrowLeft') e.altKey ? edit(() => swapSel(-1))() : moveCursor(-1);
+  else if (key === 'ArrowRight') e.altKey ? edit(() => swapSel(1))() : moveCursor(1);
+  else if (key === 'Home') store.setCursor({ type: 'caret', index: 0 });
+  else if (key === 'End') store.setCursor({ type: 'caret', index: tune().events.length });
+  else if (key === 'Backspace' || key === 'Delete') edit(deleteSel)();
+  else if (key === 'Escape') { if (selIndex() >= 0) store.setCursor({ type: 'caret', index: selIndex() + 1 }); }
+  else if (key === ' ') { if (t.closest && t.closest('button') && t !== card) return; togglePlay(); }
+  else if (key === 'l' || key === 'L') { loopOn = !loopOn; syncPlay(); }
+  else if (key === '?') openSheet();
+  else handled = false;
+  if (handled) e.preventDefault();
+});
+
+// ---------- pointer: staff ----------
+function svgPoint(ev) {
+  const svg = host.querySelector('svg');
+  const r = svg.getBoundingClientRect();
+  return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+}
+function overStaff(ev) {
+  const r = card.getBoundingClientRect();
+  return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+}
+function hoverAt(ev, withTip) {
+  if (!lay) return null;
+  const { x, y } = svgPoint(ev);
+  const yy = ev.pointerType === 'touch' ? y - 3 * lay.sp : y;     // keep the ghost visible above the finger
+  const loc = lay.geo.locate(x, yy);
+  if (!loc) return null;
+  const slot = slotFor(loc);
+  const pos = ghostPos(loc);
+  const h = { slot, pos };
+  if (withTip) {
+    const c = CLEFS[tune().clef], d = pos + c.bottom, p = fromDiatonic(d);
+    const name = pitchName({ ...p, alter: keyAlter(tune().key, p.step) });
+    const dur = activeDurForGhost();
+    const moved = slot.free ? 0 : tune().events.slice(slot.index).filter(e => !e.rest).length;
+    h.tip = { text: `Insert ${name} · ${DUR_NAME[dur]}`, sub: slot.free ? 'earlier beats fill with rests' : moved ? `pushes ${moved} note${moved > 1 ? 's' : ''} later` : 'at the end' };
+  }
+  return h;
+}
+
+function placeNote(h, dur) {
+  const c = CLEFS[tune().clef], p = fromDiatonic(h.pos + c.bottom);
+  const n = { ...p, alter: keyAlter(tune().key, p.step), dur };
+  stopPlayback();
+  if (h.slot.free) {
+    const r = M.insertAtTick(tune(), h.slot.tick, n);
+    if (!r.error) apply(r, { type: 'note', index: r.tune.events.length - 1 }, n); else warnFull();
+  } else apply(M.insert(tune(), h.slot.index, n), { type: 'note', index: h.slot.index }, n);
+  paintOverlay();
+}
+
+card.addEventListener('pointermove', ev => {
+  if (drag) return;
+  if (ev.pointerType !== 'mouse' || !lay) return;
+  const { x, y } = svgPoint(ev);
+  if (lay.geo.hitEvent(x, y) >= 0) { if (hover) { hover = null; paintOverlay(); } return; }
+  hover = hoverAt(ev, false);
+  paintOverlay();
+});
+card.addEventListener('pointerleave', () => { if (!drag && hover) { hover = null; paintOverlay(); } });
+
+card.addEventListener('pointerdown', ev => {
+  if (ev.button !== 0 || !lay) return;
+  card.focus({ preventScroll: true });
+  const { x, y } = svgPoint(ev);
+  const hit = lay.geo.hitEvent(x, y);
+  if (hit >= 0) {
+    stopPlayback();
+    select(hit);
+    const e = tune().events[hit];
+    if (!e.rest) drag = { kind: 'pitch', id: ev.pointerId, index: hit, startY: y, original: tune(), startD: diatonic(e), lastD: diatonic(e) };
+  } else {
+    hover = hoverAt(ev, false);
+    if (!hover) { store.setCursor({ type: 'caret', index: tune().events.length }); return; }
+    drag = { kind: 'place', id: ev.pointerId };
+    paintOverlay();
+  }
+  card.setPointerCapture(ev.pointerId);
+  ev.preventDefault();
+});
+
+card.addEventListener('pointermove', ev => {
+  if (!drag || drag.id !== ev.pointerId) return;
+  if (drag.kind === 'place') { const h = hoverAt(ev, false); if (h) { hover = h; paintOverlay(); } return; }
+  if (drag.kind === 'pitch') {
+    const { y } = svgPoint(ev);
+    const steps = Math.round((drag.startY - y) / (lay.sp / 2));
+    const d = clampDiatonic(tune().clef, drag.startD + steps);
+    if (d === drag.lastD) return;
+    drag.lastD = d; drag.moved = true;
+    const p = fromDiatonic(d), e = tune().events[drag.index];
+    const n = { ...e, ...p, alter: keyAlter(tune().key, p.step) };
+    store.tune = { ...tune(), events: tune().events.map((x, i) => (i === drag.index ? n : x)) };
+    render();
+    if (previewOn) preview(n);
+  }
+});
+
+function endDrag(ev) {
+  if (!drag || drag.id !== ev.pointerId) return;
+  const d = drag; drag = null;
+  if (d.kind === 'place') {
+    const h = hover; hover = null;
+    if (h && overStaff(ev)) placeNote(h, inputDur); else paintOverlay();
+  } else if (d.kind === 'pitch' && d.moved) {
+    const final = tune();
+    store.tune = d.original;
+    store.commit(final);
+  }
+}
+card.addEventListener('pointerup', endDrag);
+card.addEventListener('pointercancel', ev => { if (drag && drag.id === ev.pointerId) cancelDrag(); });
+
+function cancelDrag() {
+  const d = drag; drag = null; hover = null;
+  if (!d) return;
+  if (d.kind === 'pitch' && d.moved) { store.tune = d.original; render(); }
+  if (d.kind === 'chip') d.el?.remove();
+  paintOverlay();
+}
+
+// ---------- pointer: duration chips (click or drag onto the staff) ----------
+document.querySelectorAll('[data-dur]').forEach(btn => {
+  btn.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0) return;
+    const base = +btn.dataset.dur;
+    drag = { kind: 'chip', id: ev.pointerId, base, dur: base, x0: ev.clientX, y0: ev.clientY, started: false, btn };
+    btn.setPointerCapture(ev.pointerId);
+  });
+  btn.addEventListener('pointermove', ev => {
+    if (!drag || drag.kind !== 'chip' || drag.id !== ev.pointerId) return;
+    if (!drag.started) {
+      if (Math.hypot(ev.clientX - drag.x0, ev.clientY - drag.y0) < 6) return;
+      drag.started = true;
+      const sel = selected();
+      drag.dur = sel ? drag.base : (inputDur >= 5 && canDot(drag.base) ? drag.base + 4 : drag.base);
+      drag.el = document.createElement('div');
+      drag.el.className = 'drag-chip';
+      drag.el.innerHTML = btn.querySelector('.mg').outerHTML;
+      document.body.appendChild(drag.el);
+    }
+    drag.el.style.left = ev.clientX + 'px'; drag.el.style.top = ev.clientY + 'px';
+    hover = overStaff(ev) ? hoverAt(ev, true) : null;
+    paintOverlay();
+  });
+  btn.addEventListener('pointerup', ev => {
+    if (!drag || drag.kind !== 'chip' || drag.id !== ev.pointerId) return;
+    const d = drag; drag = null;
+    if (!d.started) { edit(() => setDur(d.base))(); return; }
+    d.el.remove();
+    const h = hover; hover = null;
+    if (h && overStaff(ev)) placeNote(h, d.dur);
+    else paintOverlay();
+  });
+  btn.addEventListener('pointercancel', () => { if (drag && drag.kind === 'chip') cancelDrag(); });
+});
+
+// ---------- toolbar buttons ----------
+$('dot').onclick = edit(toggleDotted);
+$('rest').onclick = edit(typeRest);
+document.querySelectorAll('[data-alter]').forEach(b => { b.onclick = edit(() => setAlter(+b.dataset.alter)); });
+$('octUp').onclick = edit(() => movePitch(7));
+$('octDown').onclick = edit(() => movePitch(-7));
+$('del').onclick = edit(deleteSel);
+$('undo').onclick = $('undoSm').onclick = edit(() => store.undo());
+$('redo').onclick = edit(() => store.redo());
+// Keep focus on the staff after toolbar clicks so keyboard entry continues.
+$('noteBar').addEventListener('click', () => card.focus({ preventScroll: true }));
+
+// ---------- tune settings ----------
+const setField = patch => { stopPlayback(); apply({ tune: { ...tune(), ...patch } }); };
+$('play').onclick = togglePlay;
+$('loop').onclick = () => { loopOn = !loopOn; syncPlay(); };
+$('preview').onclick = () => { previewOn = !previewOn; syncPlay(); };
+$('key').innerHTML = KEY_NAMES.map((_, i) => `<option value="${i - 7}">${keyLabel(i - 7)}</option>`).join('');
+$('key').onchange = e => setField({ key: +e.target.value });
+$('clefT').onclick = () => tune().clef !== 'treble' && setField({ clef: 'treble' });
+$('clefB').onclick = () => tune().clef !== 'bass' && setField({ clef: 'bass' });
+$('time').onchange = e => {
+  stopPlayback();
+  const r = M.setTime(tune(), e.target.value);
+  if (r.error) { toast({ kind: 'warn', title: "The tune doesn't fit", body: `It needs more than 12 measures in ${e.target.value}.` }); sync(); return; }
+  apply(r);
+  if (r.expanded) toast({ title: `Expanded to ${r.expanded} measures to fit` });
+};
+$('mUp').onclick = () => { stopPlayback(); setMeasures(tune().measures + 1); };
+$('mDown').onclick = () => { stopPlayback(); setMeasures(tune().measures - 1); };
+const setBpm = v => { const b = Math.max(40, Math.min(240, Math.round(v) || 100)); if (b !== tune().bpm) setField({ bpm: b }); else sync(); };
+$('bpm').onchange = e => setBpm(+e.target.value);
+$('bpm').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); };
+$('bpmDown').onclick = e => setBpm(tune().bpm - (e.shiftKey ? 1 : 5));
+$('bpmUp').onclick = e => setBpm(tune().bpm + (e.shiftKey ? 1 : 5));
+$('title').onchange = e => { const v = e.target.value.slice(0, 60); if (v !== tune().title) setField({ title: v }); };
+$('title').onkeydown = e => {
+  if (e.key === 'Enter') e.target.blur();
+  if (e.key === 'Escape') { e.target.value = tune().title; e.target.blur(); }
+};
+$('settingsToggle').onclick = () => {
+  const bar = document.querySelector('.tune-bar'), open = !bar.classList.contains('open');
+  bar.classList.toggle('open', open);
+  $('settingsToggle').setAttribute('aria-expanded', open);
+};
+
+// New tune (with confirmation popover)
+$('new').onclick = () => { $('newPop').hidden = !$('newPop').hidden; };
+$('newCancel').onclick = () => { $('newPop').hidden = true; };
+$('newOk').onclick = () => {
+  $('newPop').hidden = true;
+  stopPlayback();
+  store.commit(M.defaultTune(), { type: 'caret', index: 0 });
+};
+document.addEventListener('pointerdown', e => {
+  if (!$('newPop').hidden && !e.target.closest('.pop-wrap')) $('newPop').hidden = true;
+});
+
+// Copy / share link
+$('copy').onclick = async () => {
+  store.flushUrl();
+  const url = location.href;
+  if (matchMedia('(max-width: 599px)').matches && navigator.share) {
+    try { await navigator.share({ title: tune().title || 'TuneShare', url }); return; } catch (err) { if (err.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(url); toast({ title: 'Link copied', body: `${url.length} characters` }); }
+  catch { window.prompt('Copy this link:', url); }
+};
+
+// Shortcut sheet
+function openSheet() { $('sheet').hidden = false; $('sheetClose').focus(); }
+function closeSheet() { $('sheet').hidden = true; card.focus({ preventScroll: true }); }
+$('help').onclick = openSheet;
+$('sheetClose').onclick = closeSheet;
+$('sheet').onclick = e => { if (e.target === $('sheet')) closeSheet(); };
+
+// ---------- store + URL wiring ----------
+store.subscribe(change => {
+  if (change === 'tune') render();
+  else { paintClasses(); paintOverlay(); sync(); }
+});
+addEventListener('hashchange', () => {
+  if (location.hash === store.lastHash) return;
+  stopPlayback();
+  const r = decode(location.hash);
+  store.lastHash = location.hash;
+  store.load(r.tune);
+  if (r.repaired) toast({ kind: 'warn', title: 'This link was damaged', body: 'Some notes may be missing.' });
+});
+let resizeRaf = 0;
+addEventListener('resize', () => { cancelAnimationFrame(resizeRaf); resizeRaf = requestAnimationFrame(render); });
+
+// ---------- start ----------
+document.fonts.ready.then(render);
+render();
+if (initial.newer) toast({ kind: 'warn', title: 'Made with a newer TuneShare', body: 'Some features of this tune may not display.' });
+else if (initial.repaired) toast({ kind: 'warn', title: 'This link was damaged', body: 'Some notes may be missing.' });
+card.focus({ preventScroll: true });
