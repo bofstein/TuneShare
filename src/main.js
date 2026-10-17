@@ -7,7 +7,7 @@ import * as M from './model.js';
 import { decode, encode, VERSION } from './codec.js';
 import { dumpFragment } from './debug.js';
 import { layout, G } from './layout.js';
-import { renderStaff, renderOverlay } from './render.js';
+import { renderSystems, renderOverlay, OVERLAY } from './render.js';
 import { Player, preview } from './audio.js';
 import { Store } from './store.js';
 import { fileName, toMusicXML } from './musicxml.js';
@@ -299,12 +299,23 @@ function scrollToEvent(key) {
 }
 
 // ---------- rendering ----------
+// Only the systems whose markup changed are replaced. Building and styling the whole staff is what
+// makes an edit slow in a long tune, and an edit usually touches one system.
+let shown = null;
+function paintStaff({ open, systems }) {
+  if (shown && shown.open === open && shown.systems.length === systems.length) {
+    const gs = host.querySelectorAll('g.sys');
+    systems.forEach((markup, k) => { if (markup !== shown.systems[k]) gs[k].outerHTML = markup; });
+  } else host.innerHTML = open + systems.join('') + OVERLAY + '</svg>';
+  shown = { open, systems };
+}
+
 function render() {
   const w = Math.max(280, host.clientWidth);
   const perSys = w >= 860 ? 4 : w >= 560 ? 3 : 2;
   const sp = w >= 560 ? 10 : 8;
   lay = layout(store.tune, { width: w, perSys, sp });   // every staff, not the active staff's view
-  host.innerHTML = renderStaff(lay);
+  paintStaff(renderSystems(lay));
   paintClasses();
   paintOverlay();
   sync();
