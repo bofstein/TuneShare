@@ -2,7 +2,7 @@
 // Rules: DESIGN.md, "Editing rules" (ripple editing, overflow trimming).
 import { TICKS_PER_MEASURE, TICKS_TO_DUR, spell, spellAligned, ticksOf } from './theory.js';
 
-export const MAX_MEASURES = 64;   // DESIGN.md, "Measure limit": why 64
+export const MAX_MEASURES = 96;   // DESIGN.md, "Measure limit": why 96
 
 // staff2 is absent for a one-staff tune.
 export const defaultTune = () => ({ title: '', bpm: 100, key: 0, clef: 'treble', time: '4/4', measures: 4, events: [] });

@@ -23,7 +23,7 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 
 | In | Out (for now) |
 | --- | --- |
-| Up to 64 measures | Lyrics; independent rhythms within one staff |
+| Up to 96 measures | Lyrics; independent rhythms within one staff |
 | Chords: up to 5 notes of the same length (an app limit, not a format limit) | Chords whose notes have different lengths |
 | A second staff, played together with the first, with its own clef | More than two staves |
 | Treble and bass clef; all 15 key signatures | Changing key, clef or tempo partway through |
@@ -78,7 +78,7 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 - Clicking past the end of the content pads with rests, so the note lands
   where the ghost note showed it.
 - Removing a measure is allowed only if it holds nothing but rests. Changing
-  the time signature adds measures automatically if needed (up to `MAX_MEASURES`, 64).
+  the time signature adds measures automatically if needed (up to `MAX_MEASURES`, 96).
 - All edits are pure functions in `src/model.js` that return `{tune}` or
   `{error}`. The UI keeps undo history as snapshots.
 
@@ -113,18 +113,19 @@ https://bofstein.github.io/TuneShare/#2.<base64url payload>
 - **Link length:** a typical tune is 40–120 characters, about 3 times shorter
   than the same tune in v1. The app warns once when a link passes 2,000
   characters, roughly what chat apps, email and QR codes handle reliably.
-- **Measure limit:** `MAX_MEASURES` (64) is the one place the cap is set; the
-  voice's event limit (16 sixteenths per 4/4 measure) follows from it. Why 64:
+- **Measure limit:** `MAX_MEASURES` (96) is the one place the cap is set; the
+  voice's event limit (16 sixteenths per 4/4 measure) follows from it. Why 96:
   a through-composed two-staff tune costs about 6–7 link characters per
-  measure (64 measures: about 470), a dense 16th-note piece with chords on
-  both staves about 33 (64 measures: about 2,200, so the long-link warning can
-  show), and only deliberately incompressible input (random 16ths with
-  5-note chords) goes past 2,000 characters at any length. Typical song forms
-  are 8–32 bars (a 32-bar standard fits twice). Editing re-renders the whole
-  staff, which stays under about 100 ms at 64 measures even for the dense case
-  and far less for a normal one; past 100 measures dense tunes take over
-  400 ms per edit. Raising the cap past 64 would need the renderer to redraw
-  only the changed system first.
+  measure (96 measures: about 690), a busy piano piece about 14 (about 1,350),
+  a dense non-repeating 16th-note piece with chords on both staves about 33
+  (about 3,300, so the long-link warning shows past roughly 56 bars), and only
+  deliberately incompressible input (random 16ths with 5-note chords) goes past
+  2,000 characters at any length. Typical song forms are 8–32 bars; 96 is three
+  32-bar forms and divides into whole systems at 2, 3 and 4 bars per line.
+  Editing swaps only the systems whose markup changed (see "Rendering"), which
+  keeps an in-place edit of the densest 96-bar tune near 100 ms and a ripple
+  edit (one that moves everything after it) under 300 ms. Past about 128 bars
+  a dense ripple edit passes 400 ms.
 - **The decoder is lenient.** A damaged or truncated link still opens, keeping
   every complete note, and the app shows a "this link was damaged" toast.
 
@@ -137,7 +138,7 @@ fewer leading zeros than it has bits (0 = `1`, 1 = `010`, 2 = `011`, 3 = `00100`
 A signed number is zigzagged first (0, −1, 1, −2, … → 0, 1, 2, 3, …).
 
 ```
-count            Exp-Golomb   number of events (≤ 1024: 64 measures of 4/4 in 16ths)
+count            Exp-Golomb   number of events (≤ 1536: 96 measures of 4/4 in 16ths)
 flags            3 bits       the voice uses rests / accidentals outside the key / chords
 then items until `count` events are covered, each one of:
 
@@ -210,6 +211,14 @@ lenient decoding of truncated links.
   - `src/layout.js` (pure) turns a tune into positioned shapes plus hit-test
     geometry: splitting at bar lines, ties, beams, accidentals and spacing.
   - `src/render.js` turns that into SVG markup.
+- **Edits redraw one system at a time.** `renderSystems` returns the staff as
+  one markup string per system (one line of 2–4 bars). The app replaces only
+  the systems whose string changed, so a note edited in one line leaves the
+  rest of the page's elements alone. Building and styling the whole staff is
+  what made edits slow in long dense tunes: on a dense 64-bar, two-staff tune
+  it took about 300 ms against about 90 ms now. An edit that moves everything
+  after it still redraws every later system. An event that crosses a line break
+  (a tie) is drawn as one `.ev` group in each system.
 - **Two staves** are drawn as a grand staff: a brace, and bar lines through
   both. Spacing is shared, so notes that sound together line up.
 - **Chords** stack on one stem. Notes a second apart sit on opposite sides of

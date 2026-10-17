@@ -16,15 +16,48 @@ function item(it, fs) {
   }
 }
 
-export function renderStaff(lay) {
-  const fs = 4 * lay.sp;
-  let out = lay.staff.map(i => item(i, fs)).join('');
+/** Vertical position an item is drawn at, which decides the system it belongs to. */
+function yOf(it) {
+  switch (it.t) {
+    case 'line': return it.y1;
+    case 'poly': return it.pts[0][1];
+    case 'path': return +(/^M[-\d.]+,([-\d.]+)/.exec(it.d) || [0, 0])[1];
+    default: return it.y;
+  }
+}
+
+export const OVERLAY = '<g class="overlay"></g>';
+
+/**
+ * The staff as markup split by system: `{ open, systems }`, where `open` is the <svg> start tag and
+ * `systems[k]` is the <g class="sys"> of system k (the overlay and </svg> are left to the caller).
+ * Every system is a self-contained string, so an edit that changes one system leaves the rest
+ * identical and the caller can swap just the strings that differ. An event spanning two systems
+ * (a tie across the line break) is drawn as one `.ev` group in each.
+ */
+export function renderSystems(lay) {
+  const fs = 4 * lay.sp, { sysH, systems: sys } = lay.geo, n = sys.length;
+  const at = it => Math.max(0, Math.min(n - 1, Math.floor(yOf(it) / sysH)));
+  const parts = Array.from({ length: n }, () => ({ staff: [], events: new Map(), implicit: [], beams: [] }));
+  lay.staff.forEach(it => parts[at(it)].staff.push(it));
+  lay.implicit.forEach(it => parts[at(it)].implicit.push(it));
+  lay.beams.forEach(it => parts[at(it)].beams.push(it));
   lay.events.forEach((evs, s) => {
-    for (const [i, items] of evs) out += `<g class="ev" data-s="${s}" data-i="${i}">${items.map(it => item(it, fs)).join('')}</g>`;
+    for (const [i, items] of evs) for (const it of items) {
+      const m = parts[at(it)].events, key = `${s}:${i}`;
+      if (!m.has(key)) m.set(key, { s, i, items: [] });
+      m.get(key).items.push(it);
+    }
   });
-  out += `<g>${lay.implicit.map(i => item(i, fs)).join('')}</g><g>${lay.beams.map(i => item(i, fs)).join('')}</g>`;
-  out += '<g class="overlay"></g>';
-  return `<svg class="staff" viewBox="0 0 ${f(lay.width)} ${f(lay.height)}" width="${f(lay.width)}" height="${f(lay.height)}" aria-hidden="true">${out}</svg>`;
+  const systems = parts.map((p, k) => {
+    let out = p.staff.map(it => item(it, fs)).join('');
+    for (const { s, i, items } of [...p.events.values()].sort((a, b) => a.s - b.s || a.i - b.i)) {
+      out += `<g class="ev" data-s="${s}" data-i="${i}">${items.map(it => item(it, fs)).join('')}</g>`;
+    }
+    return `<g class="sys">${out}<g>${p.implicit.map(it => item(it, fs)).join('')}</g><g>${p.beams.map(it => item(it, fs)).join('')}</g></g>`;
+  });
+  const open = `<svg class="staff" viewBox="0 0 ${f(lay.width)} ${f(lay.height)}" width="${f(lay.width)}" height="${f(lay.height)}" aria-hidden="true">`;
+  return { open, systems };
 }
 
 /**
