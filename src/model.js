@@ -100,7 +100,7 @@ export function setTime(tune, time) {
 // ---------- chords ----------
 // A note event may carry extra simultaneous pitches in `tones` (same length).
 // The URL format has no limit; this is the editor's limit and can be raised freely.
-export const MAX_CHORD_NOTES = 6;
+export const MAX_CHORD_NOTES = 5;
 
 const pitchOnly = p => ({ step: p.step, oct: p.oct, alter: p.alter });
 export const pitchesOf = e => (e.rest ? [] : [pitchOnly(e), ...(e.tones || [])]);

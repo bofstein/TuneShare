@@ -68,7 +68,6 @@ test('addTone builds chords up to the cap and refuses duplicates', () => {
   let t = tune('C4:q');
   for (const step of [2, 4, 6]) t = M.addTone(t, 0, P(step, 4)).tune;
   t = M.addTone(t, 0, P(1, 5)).tune;
-  t = M.addTone(t, 0, P(3, 5)).tune;
   assert.equal(M.pitchesOf(t.events[0]).length, M.MAX_CHORD_NOTES);
   assert.equal(M.addTone(t, 0, P(5, 5)).error, 'chord-full');
   assert.equal(M.addTone(tune('C4:q'), 0, P(0, 4, 1)).error, 'duplicate');

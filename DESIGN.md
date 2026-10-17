@@ -24,7 +24,7 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
 | In | Out (for now) |
 | --- | --- |
 | Up to 12 measures | Lyrics; independent rhythms within one staff |
-| Chords: up to 6 notes of the same length (an app limit, not a format limit) | Chords whose notes have different lengths |
+| Chords: up to 5 notes of the same length (an app limit, not a format limit) | Chords whose notes have different lengths |
 | A second staff (planned: [#4](https://github.com/bofstein/TuneShare/issues/4)) | More than two staves |
 | Treble and bass clef; all 15 key signatures | Changing key, clef or tempo partway through |
 | 2/4, 3/4, 4/4, 6/8 | Other time signatures (they can be added later without breaking links) |
@@ -45,7 +45,7 @@ Working notes and drafts go in `context/`, which is gitignored and local only.
   drawn as faint rests and never stored.
 - **Chords:** a note event may carry extra pitches (`tones`) that share its
   length, so chords don't change any timing rule. The main pitch is the one
-  entered first. The limit, `MAX_CHORD_NOTES` in `src/model.js` (6), is an
+  entered first. The limit, `MAX_CHORD_NOTES` in `src/model.js` (5), is an
   editor setting: the URL format allows any number, so the limit can be
   raised without breaking links. Two notes can't share a line or space.
 - **Pitch is stored as the sounding pitch**: letter + octave + alteration
