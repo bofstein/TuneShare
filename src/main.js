@@ -8,7 +8,8 @@ import { decode, encode, VERSION } from './codec.js';
 import { dumpFragment } from './debug.js';
 import { layout, G } from './layout.js';
 import { renderSystems, renderOverlay, OVERLAY } from './render.js';
-import { Player, preview } from './audio.js';
+import { Player, preview, setInstrument } from './audio.js';
+import { INSTRUMENTS, DEFAULT_INSTRUMENT, instrumentName } from './instruments.js';
 import { Store } from './store.js';
 import { fileName, toMusicXML } from './musicxml.js';
 import { toggleTheme } from './theme.js';
@@ -435,10 +436,12 @@ function sync() {
   $('staves1').classList.toggle('on', !twoStaves());
   $('staves2').classList.toggle('on', twoStaves());
   $('time').value = t.time;
+  $('instrument').value = t.instrument || DEFAULT_INSTRUMENT;
+  setInstrument(t.instrument || DEFAULT_INSTRUMENT);
   $('measures').textContent = t.measures;
   $('mUp').disabled = t.measures >= M.MAX_MEASURES;
   $('mDown').disabled = t.measures <= 1;
-  $('settingsSummary').innerHTML = `<span class="mg">${G.mQ}</span>=${t.bpm} · ${keyName(t.key).split(' / ')[0]} · ${t.time} · ${t.measures} bars${twoStaves() ? ' · 2 staves' : ''}`;
+  $('settingsSummary').innerHTML = `<span class="mg">${G.mQ}</span>=${t.bpm} · ${keyName(t.key).split(' / ')[0]} · ${t.time} · ${t.measures} bars${twoStaves() ? ' · 2 staves' : ''}${t.instrument && t.instrument !== DEFAULT_INSTRUMENT ? ` · ${instrumentName(t.instrument)}` : ''}`;
   document.title = t.title ? `${t.title} — TuneShare` : 'TuneShare';
   card.setAttribute('aria-label', sel ? `Staff${where}. Selected: ${sel.rest ? 'rest' : M.pitchesOf(sel).map(pitchName).join(', ')}, ${DUR_NAME[sel.dur]}` : 'Staff');
   syncPlay();
@@ -721,6 +724,13 @@ $('clefT').onclick = () => tune().clef !== 'treble' && setField({ clef: 'treble'
 $('clefB').onclick = () => tune().clef !== 'bass' && setField({ clef: 'bass' });
 $('staves1').onclick = () => { stopPlayback(); setStaves(1); };
 $('staves2').onclick = () => { stopPlayback(); setStaves(2); };
+$('instrument').innerHTML = INSTRUMENTS.map(x => `<option value="${x.id}">${x.name}${x.id === DEFAULT_INSTRUMENT ? ' (default)' : ''}</option>`).join('');
+$('instrument').onchange = e => {
+  const id = e.target.value;
+  setField({ instrument: id === DEFAULT_INSTRUMENT ? undefined : id });
+  setInstrument(id);
+  if (previewOn) preview({ step: 0, oct: 4, alter: 0 }, { step: 2, oct: 4, alter: 0 }, { step: 4, oct: 4, alter: 0 });
+};
 $('time').onchange = e => {
   stopPlayback();
   const r = M.setTime(store.tune, e.target.value);
