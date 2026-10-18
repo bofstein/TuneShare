@@ -295,18 +295,25 @@ npm test                   # unit tests (node:test, no install needed)
 index.html, styles.css     app shell and styles
 src/theory.js              durations, keys, pitch math
 src/model.js               pure edit operations and the overflow rule
+src/position.js            pure geometric & hit-test calculations for notation layout
+src/editor.js              pure note editing actions, cursor math & state querying
+src/ui-format.js           pure UI string and accessibility formatting helpers
 src/codec.js, tune.proto   URL encode/decode (container, v1 reader)
 src/voice.js               the v2 voice bit stream: plan, write, parse, resolve
 src/debug.js               Ctrl+D dump of the URL protobuf (pure)
 src/layout.js, render.js   notation layout (pure) and SVG output
 src/audio.js               synth voice and playback scheduler
 src/store.js               current tune, cursor, undo, URL writes
-src/main.js                controller: input, toolbar, toasts, wiring
-tests/                     unit tests for codec, voice, debug, model and layout
+src/toast.js               toast notifications and error handling
+src/dialogs.js             modal sheets, popovers, sharing, MusicXML export
+src/gestures.js            pointer interactions and drag handlers
+src/keyboard.js            keyboard shortcut dispatcher
+src/main.js                controller: orchestrator wiring store, DOM, and playback
+tests/                     unit tests for codec, voice, debug, model, layout, editor, position, format
 ```
 
 - State flows one way: input → model op → store → (URL, re-render).
-- Keep modules that make decisions (`theory`, `model`, `codec`, `voice`, `layout`) pure,
+- Keep modules that make decisions (`theory`, `model`, `position`, `editor`, `ui-format`, `codec`, `voice`, `layout`) pure,
   with no DOM access, so they stay unit-testable.
 - CI (`.github/workflows/test.yml`) runs `npm test` on every push and pull
   request.
