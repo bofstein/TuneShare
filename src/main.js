@@ -331,25 +331,84 @@ function paintClasses() {
   });
 }
 
+/** Determine insertion index visually from pointer x relative to events on this system. */
+function findVisualIndex(x, loc, ev, geo, starts) {
+  if (x == null) {
+    let j = 0;
+    while (j < ev.length - 1 && starts[j + 1] <= loc.abs) j++;
+    const len = DUR_TICKS[ev[j].dur];
+    return loc.abs - starts[j] < len / 2 ? j : j + 1;
+  }
+  const sysEvents = [];
+  for (let i = 0; i < ev.length; i++) {
+    const span = geo.eventSpan(i, loc.s);
+    if (span && span.k === loc.k) sysEvents.push({ i, span });
+  }
+  if (!sysEvents.length) return 0;
+  if (x < sysEvents[0].span.x) return sysEvents[0].i;
+  const hw = 1.18 * lay.sp;
+  if (x >= sysEvents[sysEvents.length - 1].span.x + hw) return sysEvents[sysEvents.length - 1].i + 1;
+  for (let r = 0; r < sysEvents.length - 1; r++) {
+    if (x >= sysEvents[r].span.x && x < sysEvents[r + 1].span.x) return sysEvents[r + 1].i;
+  }
+  return sysEvents[sysEvents.length - 1].i + 1;
+}
+
+/** Compute dynamically clamped x position for the insertion shadow note between existing events. */
+function shadowX(index, loc, x, ev, geo, sp, starts, defaultX) {
+  if (x == null || !ev.length) return defaultX;
+  const hw = 1.18 * sp, st = loc.s;
+  if (index > 0 && index < ev.length) {
+    const spanLeft = geo.eventSpan(index - 1, st), spanRight = geo.eventSpan(index, st);
+    if (spanLeft && spanRight && spanLeft.k === loc.k && spanRight.k === loc.k) {
+      const mLeft = Math.floor(starts[index - 1] / geo.tpm), mRight = Math.floor(starts[index] / geo.tpm);
+      const isDotted = [3, 6, 12].includes(DUR_TICKS[ev[index - 1].dur]);
+      const leftEdge = mLeft === mRight
+        ? spanLeft.x + hw + (isDotted ? 0.65 : 0.15) * sp
+        : geo.tx(mRight, 0, false) - 1.2 * sp;
+      const minX = leftEdge + hw / 2;
+      return defaultX > minX ? Math.max(minX, Math.min(defaultX, x)) : (leftEdge + defaultX) / 2;
+    }
+    if (spanRight && spanRight.k === loc.k) {
+      const minX = Math.max(geo.systems[loc.k].xStart, defaultX - 3.0 * sp) + hw / 2;
+      return defaultX > minX ? Math.max(minX, Math.min(defaultX, x)) : defaultX;
+    }
+  } else if (index === 0) {
+    const spanRight = geo.eventSpan(0, st);
+    if (spanRight && spanRight.k === loc.k) {
+      const leftEdge = Math.max(geo.systems[loc.k].xStart - 1.0 * sp, defaultX - 3.5 * sp);
+      const minX = leftEdge + hw / 2;
+      return defaultX > minX ? Math.max(minX, Math.min(defaultX, x)) : defaultX;
+    }
+  } else if (index >= ev.length) {
+    const spanLeft = geo.eventSpan(ev.length - 1, st);
+    if (spanLeft && spanLeft.k === loc.k) {
+      const isDotted = [3, 6, 12].includes(DUR_TICKS[ev[ev.length - 1].dur]);
+      const minX = spanLeft.x + hw + (isDotted ? 0.65 : 0.15) * sp + hw / 2;
+      return Math.max(minX, x);
+    }
+  }
+  return defaultX;
+}
+
 /** Compute where an insert at (loc) would go: {st, index|tick, k, x}, st = the staff under the pointer. */
-function slotFor(loc) {
-  const { geo } = lay, st = loc.s, ev = M.staffEvents(store.tune, st), { used, starts } = geo.staves[st];
+function slotFor(loc, x) {
+  const { geo, sp } = lay, st = loc.s, ev = M.staffEvents(store.tune, st), { used, starts } = geo.staves[st];
   if (loc.abs >= used) {
     const tick = Math.min(Math.round(loc.abs / 2) * 2, M.capacity(store.tune) - 1);
     if (tick <= used) {
       const s = geo.slotX(used);
-      return { st, index: ev.length, k: s.k, x: s.x, abs: used };
+      const targetX = shadowX(ev.length, loc, x, ev, geo, sp, starts, s.x);
+      return { st, index: ev.length, k: s.k, x: targetX, abs: used };
     }
     const m = Math.floor(tick / geo.tpm);
     return { st, tick, k: geo.systems.findIndex(s => m >= s.mFirst && m <= s.mLast), x: geo.tx(m, tick - m * geo.tpm), abs: tick, free: true };
   }
-  let j = 0;
-  while (j < ev.length - 1 && starts[j + 1] <= loc.abs) j++;
-  const len = DUR_TICKS[ev[j].dur];
-  const index = loc.abs - starts[j] < len / 2 ? j : j + 1;
+  const index = findVisualIndex(x, loc, ev, geo, starts);
   const abs = index < ev.length ? starts[index] : used;
   const s = geo.slotX(abs);
-  return { st, index, k: s.k, x: s.x, abs };
+  const targetX = shadowX(index, loc, x, ev, geo, sp, starts, s.x);
+  return { st, index, k: s.k, x: targetX, abs };
 }
 
 const clefOf = s => M.staffView(store.tune, s).clef;
@@ -527,7 +586,7 @@ function hoverAt(ev, withTip) {
   const yy = ev.pointerType === 'touch' ? y - 3 * lay.sp : y;     // keep the ghost visible above the finger
   const loc = lay.geo.locate(x, yy);
   if (!loc) return null;
-  const slot = slotFor(loc);
+  const slot = slotFor(loc, x);
   const pos = ghostPos(loc);
   const h = { slot, pos };
   if (withTip) {
