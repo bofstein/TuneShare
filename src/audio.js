@@ -143,8 +143,8 @@ function rawHarmonicWeight(inst, k, f0) {
   const fk = k * f0;
   if (inst === 'piano') {
     // Broad spruce soundboard plateau (125Hz..3800Hz) so upper harmonics H4-H12 ring across all registers.
-    // Supports 3 voicings: 'kg2a' (Kawai KG-2A 5'10" grand default calibrated across bass/mid/treble), 'kawai' (Kawai RX/GX), and 'yamaha' (bright C5).
-    const v = customProfiles.piano?.voicing ?? 'kg2a', yamaha = v === 'yamaha', local = v === 'kg2a' || v === 'local';
+    // Supports 3 voicings: 'kawai' (Kawai RX/GX Warm Grand default), 'kg2a' / 'local' (calibrated Kawai KG-2A 5'10" grand), and 'yamaha' (bright C5).
+    const v = customProfiles.piano?.voicing ?? 'kawai', yamaha = v === 'yamaha', local = v === 'kg2a' || v === 'local';
     if (local) {
       // 3-anchor logarithmic register interpolation calibrated directly to the user's Kawai KG-2A recordings:
       // Bass (C2/C3, 65.7Hz/131.4Hz): rich wound-string chorus [0.013, 0.616, 0.482, 0.067, 0.231, 0.273, 0.232, 0.034, 0.100, 0.392, 0.166, 0.097]
@@ -305,14 +305,14 @@ function addGuitarPluck(out, sr, f0, isElectric) {
 }
 
 function renderPercussive(inst, f0, sr, amps) {
-  const dur = 2.4, n = Math.floor(sr * dur), out = new Float32Array(n);
-  const prof = customProfiles[inst], v = prof?.voicing ?? 'kg2a', yamaha = v === 'yamaha', local = v === 'kg2a' || v === 'local';
+  const dur = inst === 'piano' ? 5.2 : 2.4, n = Math.floor(sr * dur), out = new Float32Array(n);
+  const prof = customProfiles[inst], v = prof?.voicing ?? 'kawai', yamaha = v === 'yamaha', local = v === 'kg2a' || v === 'local';
   const B = prof?.B ?? (inst === 'piano' ? 0.00011 * ((f0 / 261.63) ** 0.65) : inst === 'epiano' ? 0 : 0.00007);
-  // Kawai KG-2A measured tSlow: 2.236s at 65.7Hz, 0.552s at 328.8Hz, 0.35s at 786.9Hz -> 0.72s * (261.63/f0)^0.74
-  const tSlowExp = inst === 'epiano' ? 0.25 : (inst === 'piano' && local ? 0.74 : 0.46);
-  const tSlowBase = Math.max(0.28, (prof?.tSlow ?? { piano: local ? 0.72 : yamaha ? 1.08 : 1.32, epiano: 1.75, guitar: 0.78, eguitar: 1.25 }[inst]) * ((261.63 / f0) ** tSlowExp));
-  const tFastBase = prof?.tFast ?? { piano: local ? 0.32 : yamaha ? 0.14 : 0.16, epiano: 0.20, guitar: 0.095, eguitar: 0.14 }[inst];
-  const wFastBase = { piano: local ? 0.40 : yamaha ? 0.46 : 0.36, epiano: 0.38, guitar: 0.48, eguitar: 0.44 }[inst];
+  // Kawai RX/GX Warm Grand default: warm singing decay with authentic grand piano string resonance
+  const tSlowExp = inst === 'epiano' ? 0.25 : (inst === 'piano' && local ? 0.62 : 0.46);
+  const tSlowBase = Math.max(0.35, (prof?.tSlow ?? { piano: yamaha ? 1.85 : 2.2, epiano: 1.75, guitar: 0.78, eguitar: 1.25 }[inst]) * ((261.63 / f0) ** tSlowExp));
+  const tFastBase = prof?.tFast ?? { piano: local ? 0.22 : yamaha ? 0.14 : 0.16, epiano: 0.20, guitar: 0.095, eguitar: 0.14 }[inst];
+  const wFastBase = { piano: local ? 0.30 : yamaha ? 0.36 : 0.30, epiano: 0.38, guitar: 0.48, eguitar: 0.44 }[inst];
 
   for (let k = 1; k <= 12; k++) {
     const fk = f0 * k * Math.sqrt(1 + B * k * k);
@@ -411,8 +411,8 @@ function renderPercussive(inst, f0, sr, amps) {
       }
     }
   }
-  // Shape beginning (1.2ms anti-click cosine rise) and end (180ms smooth tail fade-out) of the buffer
-  const nIn = Math.floor(0.0012 * sr), nOut = Math.floor(0.18 * sr);
+  // Shape beginning (1.2ms anti-click cosine rise) and end (180ms or 350ms smooth tail fade-out) of the buffer
+  const nIn = Math.floor(0.0012 * sr), nOut = Math.floor((inst === 'piano' ? 0.35 : 0.18) * sr);
   for (let i = 0; i < nIn; i++) out[i] = out[i] * (0.5 - 0.5 * Math.cos(Math.PI * i / nIn)) + 0;
   for (let i = 0; i < nOut; i++) out[n - 1 - i] = out[n - 1 - i] * (0.5 - 0.5 * Math.cos(Math.PI * i / nOut)) + 0;
   return { data: out, loopStart: 0, loopEnd: 0, sustained: false };
@@ -776,7 +776,7 @@ function voice(midi, start, dur, level = 1, phraseStart = true) {
   const atk = Math.min(entry.sustained ? (instrument === 'choir' ? 0.025 : bowed && !phraseStart ? 0.022 : 0.010) : 0.003, dur * 0.35);
   const release = entry.sustained
     ? (instrument === 'choir' ? 0.18 : bowed ? 0.12 : 0.09)
-    : (instrument === 'piano' || instrument === 'epiano' ? 0.22 : 0.14);
+    : (instrument === 'piano' || instrument === 'epiano' ? 0.26 : 0.14);
   const env = ctx.createGain();
   // Pure linear ramps from (start, 0) -> (start + atk, level) -> (end, level) -> (end + release, 0)
   // Avoids the Web Audio setTargetAtTime + linearRampToValueAtTime step discontinuity!
@@ -821,7 +821,8 @@ function voice(midi, start, dur, level = 1, phraseStart = true) {
 export function preview(...pitches) {
   try {
     const c = ensure(), level = chordLevel(pitches.length);
-    pitches.forEach(p => voice(midiOf(p), c.currentTime + 0.01, 0.35, level, true));
+    const dur = (instrument === 'piano' || instrument === 'epiano') ? 1.15 : 0.38;
+    pitches.forEach(p => voice(midiOf(p), c.currentTime + 0.01, dur, level, true));
   } catch {}
 }
 
@@ -849,13 +850,24 @@ export function phraseSustainTicks(events, idx, startTick, mt, inst = instrument
   const barLimit = (Math.floor(startTick / windowTicks) + 1) * windowTicks;
   let endTick = startTick + len;
   for (let j = idx + 1; j < events.length && endTick < barLimit; j++) {
-    const ej = events[j];
-    if (ej.rest) break;
+    const ej = events[j], jLen = ticksOf(ej);
+    if (ej.rest) {
+      if (minM < 60 && jLen < 8) {
+        endTick = Math.min(barLimit, endTick + jLen);
+        continue;
+      }
+      break;
+    }
     const mj = pitchesOf(ej).map(midiOf);
-    // Stop pedaling if the same pitch is re-struck, a new bass note enters, or a melody step (1-2 semitones) clashes
-    const clash = ps.some(a => mj.some(b => a === b || (a >= 58 && Math.abs(a - b) <= 2) || (a < 55 && b < 55 && a !== b)));
-    if (clash) { endTick += Math.min(ticksOf(ej) * 0.15, 0.6); break; }
-    endTick = Math.min(barLimit, endTick + ticksOf(ej));
+    const samePitch = ps.some(a => mj.some(b => a === b));
+    if (samePitch) break;
+    // Stop pedaling on melody scale steps (1-2 semitones) or dissonant bass root changes (seconds, tritones, 7ths)
+    const clash = ps.some(a => mj.some(b => {
+      const diff = Math.abs(a - b);
+      return diff <= 2 || (a < 55 && b < 55 && [1, 2, 6, 10, 11].includes(diff % 12));
+    }));
+    if (clash) { endTick += Math.min(jLen * 0.15, 0.6); break; }
+    endTick = Math.min(barLimit, endTick + jLen);
   }
   return Math.max(len * 0.98, endTick - startTick);
 }
