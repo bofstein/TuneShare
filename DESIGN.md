@@ -238,10 +238,12 @@ lenient decoding of truncated links.
   tune (`src/instruments.js` lists them, including Cello at index 10; `src/audio.js`
   synthesises and caches each pitch). Every `(instrument, midi)` note is rendered
   once at 32 kHz into a cached `AudioBuffer` (`warmTune` pre-warms the notes of
-  the loaded tune on idle ticks, and `Player` schedules via a 0.85 s rolling
-  lookahead window). Piano (voiced after a warm Kawai grand with multi-stage
-  hammer-felt strike physics, two-stage soundboard decay, inharmonicity and
-  duplex bloom, plus optional Kawai KG-2A 5'10" grand and Yamaha C5 voicings)
+  the loaded tune on idle ticks, and `Player` schedules via an unthrottled Web
+  Worker ticker and a 2.0 s rolling lookahead window so playback continues smoothly
+  even when the tab is in the background). Piano (voiced after a warm Kawai grand
+  with multi-stage hammer-felt strike physics, two-stage soundboard decay, inharmonicity and
+  duplex bloom, calibrated after the user's Kawai KG-2A 5'10" grand as default, plus
+  optional Kawai RX/GX and Yamaha C5 voicings)
   and electric piano are percussive additive buffers; violin, cello, acoustic
   guitar (warm fingertip flesh pluck and spruce/rosewood body tap) and electric
   guitar (snappy plectrum pick with dynamic asymmetric tube-amp overdrive and

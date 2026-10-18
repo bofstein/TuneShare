@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { INSTRUMENTS } from '../src/instruments.js';
 import {
   SYNTH_SR, pickString, unselectedSympatheticGain, unselectedStringModes,
-  harmonicAmps, synthesizeNote, phraseSustainTicks, setCustomProfile,
+  harmonicAmps, synthesizeNote, phraseSustainTicks, setCustomProfile, Player,
 } from '../src/audio.js';
 import { tune } from './helpers.js';
 
@@ -170,5 +170,10 @@ test('violin and cello model initial bow-grab transient and organic bow-pressure
   }
 });
 
-
-
+test('Player instantiates ticker and manages playback lifecycle cleanly', () => {
+  const p = new Player();
+  assert.equal(p.playing, false);
+  assert.ok(p.ticker && typeof p.ticker.start === 'function' && typeof p.ticker.stop === 'function');
+  p.stop();
+  assert.equal(p.playing, false);
+});

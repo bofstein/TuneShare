@@ -860,11 +860,51 @@ export function phraseSustainTicks(events, idx, startTick, mt, inst = instrument
   return Math.max(len * 0.98, endTick - startTick);
 }
 
+/**
+ * High-resolution background timer using an inline Web Worker.
+ * Web Worker timers are not throttled to 1000ms by background tabs in Chrome/Safari/Firefox,
+ * ensuring continuous audio scheduling when the user switches tabs or minimizes the window.
+ * Gracefully falls back to setInterval in non-Worker environments (e.g. Node test runner).
+ */
+function createTicker(intervalMs, onTick) {
+  try {
+    if (typeof Worker !== 'undefined' && typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+      const code = `
+        let t = null;
+        self.onmessage = e => {
+          if (e.data === 'start') { if (!t) t = setInterval(() => postMessage('t'), ${intervalMs}); }
+          else if (e.data === 'stop') { clearInterval(t); t = null; }
+        };
+      `;
+      const blob = new Blob([code], { type: 'application/javascript' });
+      const url = URL.createObjectURL(blob);
+      const w = new Worker(url);
+      URL.revokeObjectURL(url);
+      w.onmessage = () => onTick();
+      return {
+        start: () => w.postMessage('start'),
+        stop: () => w.postMessage('stop'),
+      };
+    }
+  } catch {}
+  let t = null;
+  return {
+    start: () => { if (!t) t = setInterval(onTick, intervalMs); },
+    stop: () => { clearInterval(t); t = null; },
+  };
+}
+
 export class Player {
-  constructor() { this.playing = false; this.voices = []; }
+  constructor() {
+    this.playing = false;
+    this.voices = [];
+    this.ticker = createTicker(35, () => this.tick?.());
+  }
 
   /**
    * Plays every staff together using a rolling lookahead window so CPU stays low.
+   * Background playback is sustained via a Web Worker ticker and resilient 2.0s lookahead,
+   * while visual note-highlighting is updated smoothly via requestAnimationFrame when visible.
    * @param tune
    * @param from tick to start at
    * @param opts {{loop:()=>boolean, onEvent:(keys:string[])=>void, onEnd:()=>void}}
@@ -908,7 +948,7 @@ export class Player {
       return startTime + (fromTick === 0 ? loopTicks : contentEnd - fromTick) * secPerTick;
     };
     const flushPending = now => {
-      while (pending.length && pending[0].t0 <= now + 0.85) {
+      while (pending.length && pending[0].t0 <= now + 2.0) {
         const n = pending.shift();
         this.voices.push({ end: n.t0 + n.dur + 0.3, h: voice(n.midi, n.t0, n.dur, n.level, n.phraseStart) });
       }
@@ -917,23 +957,35 @@ export class Player {
     let passEnd = pass(c.currentTime + 0.05, from);
     flushPending(c.currentTime);
     let last = '';
-    const tickLoop = () => {
+
+    const scheduleAhead = () => {
       if (!this.playing) return;
       const now = c.currentTime;
-      if (loop() && now > passEnd - 0.9) passEnd = pass(passEnd, 0);
+      if (loop() && now > passEnd - 2.0) passEnd = pass(passEnd, 0);
       flushPending(now);
-      const keys = schedule.filter(s => now >= s.t0 && now < s.t1).map(s => s.key);
-      if (keys.join() !== last) { last = keys.join(); onEvent(keys); }
       if (now >= passEnd && !loop()) { this.stop(); onEnd(); return; }
       while (schedule.length && schedule[0].t1 < now - 1) schedule.shift();
-      this.raf = requestAnimationFrame(tickLoop);
     };
-    this.raf = requestAnimationFrame(tickLoop);
+
+    const updateUI = () => {
+      if (!this.playing) return;
+      scheduleAhead();
+      const now = c.currentTime;
+      const keys = schedule.filter(s => now >= s.t0 && now < s.t1).map(s => s.key);
+      if (keys.join() !== last) { last = keys.join(); onEvent(keys); }
+      this.raf = requestAnimationFrame(updateUI);
+    };
+
+    this.tick = scheduleAhead;
+    this.ticker.start();
+    this.raf = requestAnimationFrame(updateUI);
   }
 
   stop() {
     if (!this.playing && !this.voices.length) return;
     this.playing = false;
+    this.tick = null;
+    this.ticker.stop();
     cancelAnimationFrame(this.raf);
     if (ctx) { const now = ctx.currentTime; this.voices.forEach(v => v.h.cut(now)); }
     this.voices = [];
