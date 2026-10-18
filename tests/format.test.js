@@ -47,6 +47,29 @@ test('formatSettingsSummary includes tempo, key, time signature and bars', () =>
   assert.match(summary, /C major/);
   assert.match(summary, /4\/4/);
   assert.match(summary, /4 bars/);
+
+  // Two staves and non-default instrument
+  const twoStaffTune = {
+    ...tune,
+    instrument: 'flute',
+    staff2: { clef: 'bass', events: [] },
+  };
+  const summary2 = formatSettingsSummary(twoStaffTune);
+  assert.match(summary2, /2 staves/);
+  assert.match(summary2, /Flute/);
+});
+
+test('formatHint returns contextual keyboard hints for idle and selected states', () => {
+  const idleHint = formatHint(null);
+  assert.match(idleHint, /Type <kbd>A<\/kbd>–<kbd>G<\/kbd>/);
+  assert.match(idleHint, /<kbd>Space<\/kbd> play/);
+
+  const singleNoteHint = formatHint({ step: 0, oct: 4, dur: 2 });
+  assert.match(singleNoteHint, /half step/);
+  assert.doesNotMatch(singleNoteHint, /next chord note/);
+
+  const chordHint = formatHint({ step: 0, oct: 4, dur: 2, tones: [{ step: 2, oct: 4 }] });
+  assert.match(chordHint, /next chord note/);
 });
 
 test('formatAriaLabel describes selection and staff for screen readers', () => {
@@ -57,6 +80,17 @@ test('formatAriaLabel describes selection and staff for screen readers', () => {
   const cursor = { type: 'note', index: 0, tone: 0, staff: 0 };
   const label = formatAriaLabel(tune, cursor);
   assert.equal(label, 'Staff. Selected: C4, quarter');
+
+  // Caret cursor has no selected event
+  assert.equal(formatAriaLabel(tune, { type: 'caret', index: 0, staff: 0 }), 'Staff');
+
+  // Multi-staff tune with rest
+  const twoStaffTune = {
+    ...defaultTune(),
+    staff2: { clef: 'bass', events: [{ rest: true, dur: 3 }] },
+  };
+  const labelRest = formatAriaLabel(twoStaffTune, { type: 'note', index: 0, staff: 1 });
+  assert.equal(labelRest, 'Staff · lower staff. Selected: rest, half');
 });
 
 test('formatGhostTip provides descriptive insertion hints', () => {
@@ -65,4 +99,25 @@ test('formatGhostTip provides descriptive insertion hints', () => {
   const tip = formatGhostTip(slot, 0, tune, 2);
   assert.equal(tip.text, 'Insert E4 · quarter');
   assert.equal(tip.sub, 'earlier beats fill with rests');
+
+  // Slot at end of events
+  const slotAtEnd = { st: 0, free: false, index: 0 };
+  const tipEnd = formatGhostTip(slotAtEnd, 0, tune, 2);
+  assert.equal(tipEnd.sub, 'at the end');
+
+  // Slot pushing 1 note
+  const tuneWith1Note = {
+    ...tune,
+    events: [{ step: 0, oct: 4, dur: 2 }],
+  };
+  const tipPush1 = formatGhostTip(slotAtEnd, 0, tuneWith1Note, 2);
+  assert.equal(tipPush1.sub, 'pushes 1 note later');
+
+  // Slot pushing 2 notes
+  const tuneWith2Notes = {
+    ...tune,
+    events: [{ step: 0, oct: 4, dur: 2 }, { step: 2, oct: 4, dur: 2 }],
+  };
+  const tipPush2 = formatGhostTip(slotAtEnd, 0, tuneWith2Notes, 2);
+  assert.equal(tipPush2.sub, 'pushes 2 notes later');
 });
