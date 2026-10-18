@@ -233,17 +233,32 @@ lenient decoding of truncated links.
   9 KB. The OFL reserves the name "Bravura" for the unmodified font, so the
   subset is renamed "TuneShare Glyphs". The licence is in
   `assets/fonts/OFL-Bravura.txt`.
-- **Sound** is synthesised with the Web Audio API; there are no samples, so
-  nothing to license, download or wait for. One instrument plays the whole
-  tune (`src/instruments.js` lists them; `src/audio.js` builds each voice). The
-  default "Soft synth" is the original sound: two oscillators, an envelope and
-  a low-pass filter. Piano and electric piano are struck additive tones,
-  guitars are Karplus-Strong plucks rendered once per pitch and cached, and
-  violin, trumpet, flute, sax and choir are filtered oscillators with
-  vibrato (choir uses "ah" formants). They are recognisable rather than
-  realistic; realistic sounds would need sample sets of several MB. Each note of a chord plays at
-  1/√n volume, so chords don't clip. Playback is scheduled against
-  the audio clock, and highlighting follows that same clock.
+- **Sound** is synthesised with the Web Audio API; there are no external samples,
+  so nothing to license, download or wait for. One instrument plays the whole
+  tune (`src/instruments.js` lists them, including Cello at index 10; `src/audio.js`
+  synthesises and caches each pitch). Every `(instrument, midi)` note is rendered
+  once at 32 kHz into a cached `AudioBuffer` (`warmTune` pre-warms the notes of
+  the loaded tune on idle ticks, and `Player` schedules via a 0.85 s rolling
+  lookahead window). Piano (voiced after a warm Kawai grand with multi-stage
+  hammer-felt strike physics, two-stage soundboard decay, inharmonicity and
+  duplex bloom, plus optional Kawai KG-2A 5'10" grand and Yamaha C5 voicings)
+  and electric piano are percussive additive buffers; violin, cello, acoustic
+  guitar (warm fingertip flesh pluck and spruce/rosewood body tap) and electric
+  guitar (snappy plectrum pick with dynamic asymmetric tube-amp overdrive and
+  speaker cabinet roll-off) model physical string selection (`OPEN_STRINGS`),
+  stopping-ratio comb shifting, and sympathetic coupling of unselected open
+  strings; sustained voices (violin and cello with initial stick-slip bow "grab",
+  expressive ~5.6 Hz vibrato, FM-to-AM body-resonance shimmer and phrase-start
+  vs. legato slur articulation, trumpet, flute, sax, a 16-singer SATB choir with
+  staggered entrances, open *"ahhh"* vowel formants and glottal breath turbulence,
+  and synth) loop seamlessly across a crossfaded window using 1 kHz control-rate
+  envelope/phasor factorization. Both the cached buffers and runtime `GainNode`s
+  apply smooth S-curve/linear amplitude shaping at note onset and release so
+  attacks and damping are completely click-free. Piano also applies phrase-aware
+  sustain (`phraseSustainTicks`) so broken chords and bass notes ring across
+  harmonic phrases until a rest, bar/half-bar boundary, repeated pitch or
+  scale-step clash. Each note of a chord plays at 1/√n volume through a room
+  convolver and compressor.
 
 ## UI principles
 
