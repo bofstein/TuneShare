@@ -52,33 +52,34 @@ test('stringed instruments select physical strings and compute unselected-string
   }
 });
 
-test('piano harmonic profile reflects Kawai KG-2A default plus Kawai RX/GX and Yamaha C5 voicings across registers', () => {
-  // Default piano voicing is the calibrated Kawai KG-2A (C2, E4, G5)
-  const c2Default = harmonicAmps('piano', 65.7);
-  const e4Default = harmonicAmps('piano', 328.8);
-  const g5Default = harmonicAmps('piano', 786.9);
-  assert.ok(c2Default[1] > c2Default[0] && c2Default[9] > 0.25, 'KG-2A default bass C2 has rich H2/H3/H10 wound-string chorus');
-  assert.ok(Math.abs(e4Default[0] - 0.975) < 0.01 && Math.abs(e4Default[1] - 0.211) < 0.01, 'KG-2A default middle E4 matches calibrated spectrum');
-  assert.ok(g5Default[0] > 0.99 && g5Default[2] > g5Default[1], 'KG-2A default treble G5 has pure singing fundamental with 3rd harmonic ring');
+test('piano harmonic profile reflects Kawai RX/GX Warm Grand default plus Kawai KG-2A and Yamaha C5 voicings across registers', () => {
+  // Default piano voicing is the Kawai RX/GX Warm Grand
+  const c2Default = harmonicAmps('piano', 65.41);
+  const c3Default = harmonicAmps('piano', 130.81);
+  const c4Default = harmonicAmps('piano', 261.63);
+  const a4Default = harmonicAmps('piano', 440.0);
+  const c6Default = harmonicAmps('piano', 1046.50);
+  assert.ok(c2Default[1] > c2Default[0], `piano default C2 H2 (${c2Default[1]}) > H1 (${c2Default[0]})`);
+  assert.ok(c3Default[0] > c3Default[1], `piano default C3 H1 (${c3Default[0]}) > H2 (${c3Default[1]})`);
+  assert.ok(c4Default[0] > c4Default[1] && c6Default[0] > c6Default[1] * 2);
+  assert.ok(c4Default[7] > 0.04 && a4Default[4] > 0.04, `C4 H8 (${c4Default[7]}) and A4 H5 (${a4Default[4]}) audible`);
 
-  // Kawai RX/GX and Yamaha C5 voicings: H2 > H1 on deep bass C2, H1 > H2 by C3 and above, and Kawai warmer than Yamaha
-  setCustomProfile('piano', { voicing: 'kawai' });
-  const c2Kawai = harmonicAmps('piano', 65.41);
-  const c3Kawai = harmonicAmps('piano', 130.81);
-  const c4Kawai = harmonicAmps('piano', 261.63);
-  const a4Kawai = harmonicAmps('piano', 440.0);
-  const c6Kawai = harmonicAmps('piano', 1046.50);
-  assert.ok(c2Kawai[1] > c2Kawai[0], `piano C2 H2 (${c2Kawai[1]}) > H1 (${c2Kawai[0]})`);
-  assert.ok(c3Kawai[0] > c3Kawai[1], `piano C3 H1 (${c3Kawai[0]}) > H2 (${c3Kawai[1]})`);
-  assert.ok(c4Kawai[0] > c4Kawai[1] && c6Kawai[0] > c6Kawai[1] * 2);
-  assert.ok(c4Kawai[7] > 0.04 && a4Kawai[4] > 0.04, `C4 H8 (${c4Kawai[7]}) and A4 H5 (${a4Kawai[4]}) audible`);
+  // Calibrated Kawai KG-2A voicing (C2, E4, G5)
+  setCustomProfile('piano', { voicing: 'kg2a' });
+  const c2Kg2a = harmonicAmps('piano', 65.7);
+  const e4Kg2a = harmonicAmps('piano', 328.8);
+  const g5Kg2a = harmonicAmps('piano', 786.9);
+  assert.ok(c2Kg2a[1] > c2Kg2a[0] && c2Kg2a[9] > 0.25, 'KG-2A bass C2 has rich H2/H3/H10 wound-string chorus');
+  assert.ok(Math.abs(e4Kg2a[0] - 0.975) < 0.01 && Math.abs(e4Kg2a[1] - 0.211) < 0.01, 'KG-2A middle E4 matches calibrated spectrum');
+  assert.ok(g5Kg2a[0] > 0.99 && g5Kg2a[2] > g5Kg2a[1], 'KG-2A treble G5 has pure singing fundamental with 3rd harmonic ring');
 
+  // Yamaha C5 voicing is brighter than Kawai RX/GX
   setCustomProfile('piano', { voicing: 'yamaha' });
   const c3Yamaha = harmonicAmps('piano', 130.81);
   const c4Yamaha = harmonicAmps('piano', 261.63);
   setCustomProfile('piano', null);
   assert.ok(c3Yamaha[0] > c3Yamaha[1], `Yamaha C3 H1 (${c3Yamaha[0]}) > H2 (${c3Yamaha[1]})`);
-  const upperKawai = c4Kawai.slice(4, 10).reduce((a, x) => a + x, 0);
+  const upperKawai = c4Default.slice(4, 10).reduce((a, x) => a + x, 0);
   const upperYamaha = c4Yamaha.slice(4, 10).reduce((a, x) => a + x, 0);
   assert.ok(upperKawai < upperYamaha, `Kawai upper partials (${upperKawai}) warmer/softer than Yamaha (${upperYamaha})`);
 });
@@ -100,6 +101,10 @@ test('phraseSustainTicks pedals chordal arpeggios for piano only and stops at re
   // Repeated note C4 - C4 detaches slightly to re-articulate
   const rep = tune('C4:q C4:q').events;
   assert.ok(phraseSustainTicks(rep, 0, 0, 16, 'piano') < 4);
+
+  // Bass note C3 pedals across internal rests within the measure
+  const bassRest = tune('C3:q r:q E3:q r:q').events;
+  assert.equal(phraseSustainTicks(bassRest, 0, 0, 16, 'piano'), 16, 'bass note pedals across measure despite internal rest');
 });
 
 test('choir synthesizes a multi-singer ensemble with active chorus modulation and zero H1 dropout', () => {
