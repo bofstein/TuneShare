@@ -292,7 +292,7 @@ initKeyboard({
   onHome: () => store.setCursor({ type: 'caret', index: 0, staff: staffIdx(store.cursor) }),
   onEnd: () => store.setCursor({ type: 'caret', index: tune().events.length, staff: staffIdx(store.cursor) }),
   onEscape: () => { if (selIndex() >= 0) store.setCursor({ type: 'caret', index: selIndex() + 1, staff: staffIdx(store.cursor) }); },
-  onTogglePlay,
+  onTogglePlay: togglePlay,
   onToggleLoop: () => { loopOn = !loopOn; syncPlay(); },
   cardEl: card,
   getTune: () => store.tune,

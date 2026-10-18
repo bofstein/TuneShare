@@ -226,9 +226,13 @@ lenient decoding of truncated links.
 - **Chords** stack on one stem. Notes a second apart sit on opposite sides of
   the stem, accidentals stagger into columns (a column holds accidentals at
   least a sixth apart), and a tied chord ties every note.
-- **Spacing is time-proportional**, plus a fixed allowance in front of each
-  note for every accidental column it needs. Pointer position therefore maps directly to
-  ticks, and the layout doesn't jump while you edit.
+- **Spacing uses standard music notation flow** (LilyPond / Gould duration spring model):
+  doubling note duration adds a fixed increment of space rather than doubling width,
+  avoiding isolated voids on long notes while giving short notes comfortable breathing room.
+  Measures within each system are sized content-proportionally (dense measures receive
+  more room than sparse ones), and margins before and after barlines are balanced. Staves
+  share one grid per tick (the widest accidental allowance), so notes that sound together
+  line up vertically. Pointer position maps strictly monotonically to ticks for hit-testing.
 - **Music glyphs** come from a 34-glyph subset of Bravura (SIL OFL 1.1), about
   9 KB. The OFL reserves the name "Bravura" for the unmodified font, so the
   subset is renamed "TuneShare Glyphs". The licence is in

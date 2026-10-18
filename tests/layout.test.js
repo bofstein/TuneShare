@@ -123,3 +123,29 @@ test('chord column is narrow so the gap between notes stays free for inserting a
   assert.ok(b.x1 - a.x2 >= hw);
   assert.ok(a.x1 < a.x && a.x + hw < a.x2);
 });
+
+test('dense measures get more space than sparse measures within a system', () => {
+  // Bar 1: whole note (sparse); Bar 2: 8 eighth notes (dense)
+  const t = tune('C4:w C4:e C4:e C4:e C4:e C4:e C4:e C4:e C4:e', { measures: 2 });
+  const lay = layout(t, { width: 800, perSys: 2, sp: 10 });
+  const wBar1 = lay.geo.tx(1, 0) - lay.geo.tx(0, 0);
+  const wBar2 = lay.geo.systems[0].xEnd - lay.geo.tx(1, 0);
+  assert.ok(wBar2 > wBar1, 'dense measure receives more width than whole-note measure');
+});
+
+test('non-linear duration flow gives short notes breathing room and balances barline margin', () => {
+  // Bar 1: dotted quarter (6 ticks), eighth (2 ticks), half note (8 ticks)
+  const t = tune('C4:q. D4:e E4:h', { measures: 1 });
+  const lay = layout(t, { width: 500, perSys: 1, sp: 10 });
+  const xN1 = lay.geo.tx(0, 0);
+  const xN2 = lay.geo.tx(0, 6);
+  const xN3 = lay.geo.tx(0, 8);
+  const xEnd = lay.geo.systems[0].xEnd;
+  const gap8th = xN3 - xN2;
+  const gapHalf = xEnd - xN3;
+  // Under linear spacing, a half note (8 ticks) gets 4x the space of an 8th note (2 ticks).
+  // Under music notation flow spring scaling, the 8th note gets breathing room (gapHalf / gap8th < 3x).
+  assert.ok(gapHalf / gap8th < 3.0, 'sublinear duration spacing prevents isolated voids on long notes');
+  assert.ok(gap8th > 2.5 * lay.sp, '8th note has comfortable breathing room');
+});
+
