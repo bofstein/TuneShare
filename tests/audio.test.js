@@ -4,8 +4,11 @@ import { INSTRUMENTS } from '../src/instruments.js';
 import {
   SYNTH_SR, pickString, unselectedSympatheticGain, unselectedStringModes,
   harmonicAmps, synthesizeNote, phraseSustainTicks, setCustomProfile, Player,
+  sampleNoteName, sampleUrl, isHdSamplesEnabled, setHdSamplesEnabled, clearSampleCache,
+  tunePlaybackOrder, warmTune, ensure, onSampleProgress, getSampleLoadingProgress,
+  HD_SAMPLE_GAIN_BOOST,
 } from '../src/audio.js';
-import { tune } from './helpers.js';
+import { tune, parse } from './helpers.js';
 
 test('all instruments synthesize finite, non-silent buffers across registers', () => {
   for (const { id } of INSTRUMENTS) {
@@ -179,6 +182,117 @@ test('Player instantiates ticker and manages playback lifecycle cleanly', () => 
   const p = new Player();
   assert.equal(p.playing, false);
   assert.ok(p.ticker && typeof p.ticker.start === 'function' && typeof p.ticker.stop === 'function');
+  assert.equal(typeof p.rescheduleFuture, 'function');
+  assert.doesNotThrow(() => p.rescheduleFuture());
   p.stop();
   assert.equal(p.playing, false);
+});
+
+test('HD sample engine maps MIDI pitches and instruments to standard CDN soundfont URLs and manages toggle state', () => {
+  // MIDI note name conversions: C4 = 60, Db4 = 61, A0 = 21, C8 = 108
+  assert.equal(sampleNoteName(60), 'C4');
+  assert.equal(sampleNoteName(61), 'Db4');
+  assert.equal(sampleNoteName(21), 'A0');
+  assert.equal(sampleNoteName(108), 'C8');
+  assert.equal(sampleNoteName(69), 'A4');
+  assert.equal(sampleNoteName(70), 'Bb4');
+
+  // CDN URLs for instruments
+  const pianoC4 = sampleUrl('piano', 60);
+  assert.ok(pianoC4.includes('/acoustic_grand_piano-mp3/C4.mp3'));
+  assert.ok(pianoC4.startsWith('https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts'));
+
+  const celloC3 = sampleUrl('cello', 48);
+  assert.ok(celloC3.includes('/cello-mp3/C3.mp3'));
+
+  const fluteG5 = sampleUrl('flute', 79);
+  assert.ok(fluteG5.includes('/flute-mp3/G5.mp3'));
+
+  // Toggle state and cache management
+  const prev = isHdSamplesEnabled();
+  setHdSamplesEnabled(true);
+  assert.equal(isHdSamplesEnabled(), true);
+  setHdSamplesEnabled(false);
+  assert.equal(isHdSamplesEnabled(), false);
+  setHdSamplesEnabled(prev);
+  clearSampleCache();
+});
+
+test('tunePlaybackOrder sorts notes in chronological playback order across timeline and staves', () => {
+  const t = tune('C4:q D4:q E4:q G4:q');
+  const order = tunePlaybackOrder(t);
+  assert.deepEqual(order, [60, 62, 64, 67]);
+
+  // Repeated notes deduplicated, preserving earliest playback position
+  const rep = tune('C4:q E4:q C4:q G4:q');
+  assert.deepEqual(tunePlaybackOrder(rep), [60, 64, 67]);
+
+  // Two staves interleaved by start tick
+  const s2 = tune('C4:h E4:h', { staff2: { clef: 'bass', events: parse('G3:q A3:q B3:q C4:q') } });
+  // At tick 0: C4 (60) and G3 (55)
+  // At tick 4: A3 (57)
+  // At tick 8: E4 (64) and B3 (59)
+  // At tick 12: C4 (60, already seen)
+  const s2Order = tunePlaybackOrder(s2);
+  assert.deepEqual(s2Order, [60, 55, 57, 64, 59]);
+});
+
+test('ensure returns null safely outside browser and warmTune handles HD preloading without errors', () => {
+  assert.equal(ensure(), null);
+  const prev = isHdSamplesEnabled();
+  setHdSamplesEnabled(true);
+  const t = tune('C4:q D4:q E4:q F4:q');
+  // warmTune should process tune and invoke HD preloading pipeline without throwing
+  assert.doesNotThrow(() => warmTune(t));
+  assert.doesNotThrow(() => warmTune(null));
+  setHdSamplesEnabled(prev);
+});
+
+test('getSampleLoadingProgress calculates note cache completion and onSampleProgress notifies subscribers', () => {
+  clearSampleCache();
+  // Null or empty tune is 100% ready
+  assert.deepEqual(getSampleLoadingProgress(null), { loaded: 0, total: 0, percent: 100, ready: true });
+  assert.deepEqual(getSampleLoadingProgress(tune('')), { loaded: 0, total: 0, percent: 100, ready: true });
+
+  const t = tune('C4:q D4:q E4:q G4:q');
+  // Initially nothing loaded in cache
+  const initial = getSampleLoadingProgress(t);
+  assert.equal(initial.loaded, 0);
+  assert.equal(initial.total, 4);
+  assert.equal(initial.percent, 0);
+  assert.equal(initial.ready, false);
+
+  // Subscribe to progress
+  const received = [];
+  const unsub = onSampleProgress(p => received.push(p));
+
+  // Toggling HD emits progress
+  setHdSamplesEnabled(true);
+  assert.ok(received.length >= 1);
+
+  // Unsubscribing stops callbacks
+  const countBefore = received.length;
+  unsub();
+  setHdSamplesEnabled(false);
+  assert.equal(received.length, countBefore);
+});
+
+test('HD_SAMPLE_GAIN_BOOST provides +25% gain compensation for acoustic samples', () => {
+  assert.equal(HD_SAMPLE_GAIN_BOOST, 1.25);
+});
+
+test('default piano model uses Kawai RX/GX Warm Grand voicing', () => {
+  // Clear any custom profile so default is active
+  setCustomProfile('piano', null);
+  const ampsDefault = harmonicAmps('piano', 261.6); // C4
+  assert.ok(ampsDefault.length > 0);
+  assert.ok(Number.isFinite(ampsDefault[0]));
+
+  // Test that setting 'kawai' explicitly matches the default profile
+  setCustomProfile('piano', { voicing: 'kawai' });
+  const ampsKawai = harmonicAmps('piano', 261.6);
+  assert.deepEqual(ampsDefault, ampsKawai);
+
+  // Clean up
+  setCustomProfile('piano', null);
 });

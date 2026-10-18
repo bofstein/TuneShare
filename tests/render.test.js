@@ -65,3 +65,9 @@ test('renderOverlay renders caret marker and styles.css hides caret when unfocus
   const css = fs.readFileSync(cssPath, 'utf8');
   assert.match(css, /\.staff-card:not\(:focus-within\)\s+\.caret\s*\{\s*display:\s*none;\s*\}/);
 });
+
+test('renderOverlay produces empty markup when no overlay elements are present', () => {
+  const lay = layout(eight(), { width: 900, perSys: 4, sp: 10 });
+  const svg = renderOverlay(lay, {});
+  assert.equal(svg, '');
+});

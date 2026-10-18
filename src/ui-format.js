@@ -125,3 +125,38 @@ export function formatGhostTip(slot, pos, tune, dur) {
       : 'at the end';
   return { text: `Insert ${name} · ${DUR_NAME[dur]}`, sub };
 }
+
+/**
+ * Format HD sample indicator state, text percent, title tooltip, and ring dashoffset.
+ * Pure function: no DOM dependencies.
+ */
+export function formatHdStatus(enabled, progress) {
+  if (!enabled) {
+    return {
+      enabled: false,
+      active: false,
+      percent: 0,
+      ringOffset: 37.7,
+      badgeClass: '',
+      title: 'Stream & cache real acoustic recordings on demand (~1-2 MB)',
+    };
+  }
+  const p = progress || { loaded: 0, total: 0, percent: 100, ready: true };
+  const percent = Math.max(0, Math.min(100, p.percent ?? 0));
+  // Circle circumference for r=6: 2 * PI * 6 = 37.7
+  const ringOffset = +(37.7 * (1 - percent / 100)).toFixed(1);
+  const ready = Boolean(p.ready);
+  const badgeClass = ready ? 'ready' : 'loading';
+  const title = ready
+    ? `HD Samples (all ${p.total} note${p.total === 1 ? '' : 's'} ready)`
+    : `HD Samples: loading ${p.loaded}/${p.total} notes (${percent}%)`;
+
+  return {
+    enabled: true,
+    active: true,
+    percent,
+    ringOffset,
+    badgeClass,
+    title,
+  };
+}

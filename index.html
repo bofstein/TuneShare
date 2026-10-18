@@ -44,6 +44,7 @@
         <div class="stepper"><button id="bpmDown" aria-label="Slower">−</button><label class="val"><span class="mg">&#xECA5;</span>=<input id="bpm" type="number" min="40" max="240" inputmode="numeric" aria-label="Tempo in BPM"></label><button id="bpmUp" aria-label="Faster">+</button></div>
         <span class="muted" id="tempoWord"></span></div>
       <label class="field"><span class="lbl">Sound</span><select id="instrument" class="select" aria-label="Instrument sound"></select></label>
+      <label class="field hd-field" id="hdField" title="Stream & cache real acoustic recordings on demand (~1-2 MB)"><input type="checkbox" id="hdSamples" class="check"> <span class="lbl-inline hd-lbl"><span class="hd-text" id="hdText">HD Samples</span><span class="hd-badge" id="hdBadge" aria-hidden="true"><svg viewBox="0 0 16 16" class="hd-ring"><circle cx="8" cy="8" r="6" class="hd-ring-bg"/><circle cx="8" cy="8" r="6" class="hd-ring-fill" id="hdRingFill"/></svg><svg viewBox="0 0 16 16" class="hd-check"><path d="M4 8.5l3 3 5-6"/></svg></span></span></label>
       <label class="field"><span class="lbl">Key</span><select id="key" class="select"></select></label>
       <div class="field"><span class="lbl">Staves</span>
         <div class="seg" role="group" aria-label="Staves"><button id="staves1" title="One staff" aria-label="One staff">1</button><button id="staves2" title="Two staves, played together" aria-label="Two staves">2</button></div></div>
