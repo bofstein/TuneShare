@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { layout } from '../src/layout.js';
-import { renderSystems } from '../src/render.js';
+import { renderSystems, renderOverlay } from '../src/render.js';
 import * as M from '../src/model.js';
 import { parse, tune } from './helpers.js';
 
@@ -51,4 +54,14 @@ test('events and staves stay in order inside a system', () => {
   const [first] = draw(t).systems;
   const order = [...first.matchAll(/data-s="(\d)" data-i="(\d+)"/g)].map(m => [+m[1], +m[2]]);
   assert.deepEqual(order, [...order].sort((x, y) => x[0] - y[0] || x[1] - y[1]));
+});
+
+test('renderOverlay renders caret marker and styles.css hides caret when unfocused', () => {
+  const lay = layout(eight(), { width: 900, perSys: 4, sp: 10 });
+  const svg = renderOverlay(lay, { marker: { k: 0, s: 0, x: 100, caret: true } });
+  assert.ok(svg.includes('class="caret"'), 'overlay output includes caret class');
+
+  const cssPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../styles.css');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  assert.match(css, /\.staff-card:not\(:focus-within\)\s+\.caret\s*\{\s*display:\s*none;\s*\}/);
 });
