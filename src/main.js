@@ -186,12 +186,6 @@ function paintOverlay() {
     o.marker = slot.free ? null : { k: slot.k, s: slot.st, x: slot.x };
     o.ghost = { k: slot.k, s: slot.st, x: slot.free ? slot.x : slot.x - hw / 2, pos, ticks: DUR_TICKS[activeDurForGhost()], rest };
     if (tip) o.tip = tip;
-  } else if (store.cursor.type === 'caret') {
-    const s = staffIdx(store.cursor);
-    const { starts, used } = lay.geo.staves[s];
-    const abs = store.cursor.index < tune().events.length ? starts[store.cursor.index] : used;
-    const slot = lay.geo.slotX(Math.min(abs, M.capacity(tune()) - 1));
-    o.marker = { k: slot.k, s, x: slot.x, caret: true };
   }
   ov.innerHTML = renderOverlay(lay, o);
 }
