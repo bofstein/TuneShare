@@ -149,3 +149,21 @@ test('non-linear duration flow gives short notes breathing room and balances bar
   assert.ok(gap8th > 2.5 * lay.sp, '8th note has comfortable breathing room');
 });
 
+test('multi-voice texture prevents continuous subdivisions from collapsing long notes into linear voids', () => {
+  // Staff 0: dotted quarter (6 ticks), eighth note (2 ticks), half note (8 ticks)
+  // Staff 1: 8 eighth notes (2 ticks each)
+  const t0 = tune('C4:q. D4:e E4:h', { measures: 1 });
+  const t1 = tune('C3:e D3:e E3:e F3:e G3:e A3:e B3:e C4:e', { measures: 1, clef: 'bass' });
+  const t = { ...t0, staff2: { clef: 'bass', events: t1.events } };
+  const lay = layout(t, { width: 500, perSys: 1, sp: 10 });
+  const xN2 = lay.geo.tx(0, 6);
+  const xN3 = lay.geo.tx(0, 8);
+  const xEnd = lay.geo.systems[0].xEnd;
+  const gap8th = xN3 - xN2;
+  const gapHalf = xEnd - xN3;
+  // Without multi-voice rate blending, 8 eighth notes in staff 1 force strict linear time spacing (gapHalf / gap8th = 4.0x).
+  // With multi-voice rate blending and flag breathing room, the eighth note has room (gapHalf / gap8th < 2.8x).
+  assert.ok(gapHalf / gap8th < 2.8, `multi-voice ratio (${(gapHalf / gap8th).toFixed(2)}) prevents long note void`);
+  assert.ok(gap8th > 3.0 * lay.sp, 'flagged eighth note has ample breathing room');
+});
+

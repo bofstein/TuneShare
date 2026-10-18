@@ -162,9 +162,16 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     if (w) { if (!padAt.has(p.m)) padAt.set(p.m, new Map()); const mm = padAt.get(p.m); mm.set(p.tick, Math.max(w, mm.get(p.tick) || 0)); }
   }
 
+  // Mark beamed notes early so optical clearances know which notes take flags
+  for (const { pcs } of staves) for (const g of beamGroups(pcs, beat)) g.forEach(p => { p.beamed = true; });
+
   // Non-linear music notation flow: duration spring weighting & content-proportional measure sizing.
-  // Standard engraving practice (LilyPond / Gould): doubling duration adds an increment of space
-  // rather than doubling space. This avoids giant voids on long notes while giving short notes breathing room.
+  // Standard engraving practice (LilyPond / Gould):
+  // 1. Doubling duration adds a fixed increment of space (w(d) = 1.0 + log2(d)) rather than doubling space.
+  // 2. Multi-voice textures: when one voice sustains while another subdivides into shorter notes,
+  //    spring rates are blended (r_eff = r_max * (r_min / r_max)^0.45) so the long voice doesn't
+  //    flatten into strict linear time spacing or blow out into a giant void.
+  // 3. Optical clearances: un-beamed flags (2.3) and dots (1.8) are given dedicated breathing room.
   const durWeight = d => 1.0 + Math.log2(Math.max(1, d));
   const mBoundaries = Array.from({ length: tune.measures }, () => new Set([0, tpm]));
   for (const { pcs } of staves) {
@@ -181,8 +188,31 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     const onsets = Array.from(mBoundaries[m]).sort((a, b) => a - b);
     const weights = [];
     for (let j = 0; j < onsets.length - 1; j++) {
-      const dt = onsets[j + 1] - onsets[j];
-      let w = durWeight(dt);
+      const t0 = onsets[j], t1 = onsets[j + 1], dt = t1 - t0;
+      const rates = [];
+      let hasFlag = false, hasDot = false;
+      for (const { pcs } of staves) {
+        const p = pcs.find(x => x.m === m && x.tick <= t0 && x.tick + x.ticks >= t1);
+        if (p) {
+          const dur = Math.max(1, p.ticks);
+          rates.push((durWeight(dur) / dur) * dt);
+          if (p.tick === t0 && !p.rest) {
+            if (!p.beamed && [1, 2, 3].includes(p.ticks)) hasFlag = true;
+            if ([3, 6, 12].includes(p.ticks)) hasDot = true;
+          }
+        }
+      }
+      let w;
+      if (rates.length > 1) {
+        const rMin = Math.min(...rates), rMax = Math.max(...rates);
+        w = rMax * Math.pow(rMin / rMax, 0.45);
+      } else if (rates.length === 1) {
+        w = rates[0];
+      } else {
+        w = durWeight(dt);
+      }
+      if (hasFlag) w = Math.max(w, 2.3);
+      if (hasDot) w = Math.max(w, 1.8);
       if (j === onsets.length - 2) w *= 0.7; // Compressed terminal spring before barline prevents last note isolation
       weights.push(w);
     }
@@ -197,7 +227,7 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     mIdealW.push(wIdeal);
   }
 
-  // Measure widths and starts per system
+  // Measure widths and starts per system (blended 40% uniform + 60% proportional for natural balance)
   const mW = new Float64Array(tune.measures);
   const mXArr = new Float64Array(tune.measures);
   for (let k = 0; k < sysN; k++) {
@@ -212,10 +242,11 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
       mXArr[m] = curX;
       let w;
       if (nBars === perSys) {
-        w = availW * (mIdealW[m] / sysIdealSum);
+        const propShare = mIdealW[m] / (sysIdealSum || 1);
+        w = availW * (0.4 * (1 / nBars) + 0.6 * propShare);
       } else {
         const avgIdeal = sysIdealSum / nBars;
-        w = (availW / perSys) * (mIdealW[m] / (avgIdeal || 1));
+        w = (availW / perSys) * (0.4 + 0.6 * (mIdealW[m] / (avgIdeal || 1)));
       }
       mW[m] = w;
       curX += w;

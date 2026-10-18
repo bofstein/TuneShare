@@ -229,10 +229,14 @@ lenient decoding of truncated links.
 - **Spacing uses standard music notation flow** (LilyPond / Gould duration spring model):
   doubling note duration adds a fixed increment of space rather than doubling width,
   avoiding isolated voids on long notes while giving short notes comfortable breathing room.
-  Measures within each system are sized content-proportionally (dense measures receive
-  more room than sparse ones), and margins before and after barlines are balanced. Staves
-  share one grid per tick (the widest accidental allowance), so notes that sound together
-  line up vertically. Pointer position maps strictly monotonically to ticks for hit-testing.
+  In multi-voice / multi-staff textures, intervals blend sounding duration rates so continuous
+  subdivisions (e.g. running 8th or 16th accompaniments) do not flatten sustained long chords
+  into strict linear time voids. Un-beamed flags and dotted notes receive dedicated optical
+  clearance so symbols never crowd subsequent stems or noteheads. Measure widths within each
+  system are sized using a natural 40% uniform + 60% content-proportional blend, giving dense
+  measures room without starving sparse measures. Margins before and after barlines are balanced.
+  Staves share one grid per tick, so notes that sound together line up vertically, and pointer
+  position maps strictly monotonically to ticks for hit-testing.
 - **Music glyphs** come from a 34-glyph subset of Bravura (SIL OFL 1.1), about
   9 KB. The OFL reserves the name "Bravura" for the unmodified font, so the
   subset is renamed "TuneShare Glyphs". The licence is in
