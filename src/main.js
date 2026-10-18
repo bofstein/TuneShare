@@ -8,7 +8,7 @@ import { decode, encode, VERSION } from './codec.js';
 import { dumpFragment } from './debug.js';
 import { layout, G } from './layout.js';
 import { renderSystems, renderOverlay, OVERLAY } from './render.js';
-import { Player, preview, setInstrument } from './audio.js';
+import { Player, preview, setInstrument, warmTune } from './audio.js';
 import { INSTRUMENTS, DEFAULT_INSTRUMENT, instrumentName } from './instruments.js';
 import { Store } from './store.js';
 import { fileName, toMusicXML } from './musicxml.js';
@@ -438,6 +438,7 @@ function sync() {
   $('time').value = t.time;
   $('instrument').value = t.instrument || DEFAULT_INSTRUMENT;
   setInstrument(t.instrument || DEFAULT_INSTRUMENT);
+  warmTune(store.tune);
   $('measures').textContent = t.measures;
   $('mUp').disabled = t.measures >= M.MAX_MEASURES;
   $('mDown').disabled = t.measures <= 1;
