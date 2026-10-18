@@ -151,13 +151,9 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
   const Yg = (k, pos, s = 0) => yB(k, s) - (pos * sp) / 2;
   const x0 = nSt > 1 ? 1.6 * sp : 0;                  // room for the brace
   const hdrW = k => x0 + 0.5 * sp + 3.2 * sp + (nAcc ? nAcc * 1.05 * sp + 0.6 * sp : 0.3 * sp) + (k === 0 ? 3.0 * sp : 0.4 * sp);
-  const mw = k => (width - hdrW(k) - 2) / perSys;
   const sysOf = m => Math.floor(m / perSys);
-  const mX = m => { const k = sysOf(m); return hdrW(k) + (m - k * perSys) * mw(k); };
 
-  // Time-proportional spacing plus a fixed allowance before notes showing accidentals
-  // (one per accidental column, plus a head width when a second pushes a head left).
-  // Staves share one allowance per tick (the widest), so notes sounding together line up.
+  // Accidental allowances (staves share one allowance per tick, widest wins)
   const padAt = new Map();
   for (const { pcs } of staves) for (const p of pcs) {
     if (p.rest) continue;
@@ -165,12 +161,102 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     const w = p.accCols * 1.1 * sp + (p.accCols && hasSeconds(p.heads) ? 1.18 * sp : 0);
     if (w) { if (!padAt.has(p.m)) padAt.set(p.m, new Map()); const mm = padAt.get(p.m); mm.set(p.tick, Math.max(w, mm.get(p.tick) || 0)); }
   }
-  const pads = new Map([...padAt].map(([m, mm]) => [m, [...mm]]));
+
+  // Non-linear music notation flow: duration spring weighting & content-proportional measure sizing.
+  // Standard engraving practice (LilyPond / Gould): doubling duration adds an increment of space
+  // rather than doubling space. This avoids giant voids on long notes while giving short notes breathing room.
+  const durWeight = d => 1.0 + Math.log2(Math.max(1, d));
+  const mBoundaries = Array.from({ length: tune.measures }, () => new Set([0, tpm]));
+  for (const { pcs } of staves) {
+    for (const p of pcs) {
+      if (p.m >= 0 && p.m < tune.measures) {
+        mBoundaries[p.m].add(p.tick);
+        mBoundaries[p.m].add(Math.min(tpm, p.tick + p.ticks));
+      }
+    }
+  }
+
+  const mOnsets = [], mWeights = [], mTotalW = [], mTotalPad = [], mIdealW = [];
+  for (let m = 0; m < tune.measures; m++) {
+    const onsets = Array.from(mBoundaries[m]).sort((a, b) => a - b);
+    const weights = [];
+    for (let j = 0; j < onsets.length - 1; j++) {
+      const dt = onsets[j + 1] - onsets[j];
+      let w = durWeight(dt);
+      if (j === onsets.length - 2) w *= 0.7; // Compressed terminal spring before barline prevents last note isolation
+      weights.push(w);
+    }
+    const totalW = weights.reduce((a, b) => a + b, 0);
+    const mPadList = padAt.get(m) ? [...padAt.get(m).values()] : [];
+    const totalPad = mPadList.reduce((a, b) => a + b, 0);
+    const wIdeal = Math.max(8.0 * sp, 3.2 * sp + totalPad + totalW * 1.2 * sp);
+    mOnsets.push(onsets);
+    mWeights.push(weights);
+    mTotalW.push(totalW);
+    mTotalPad.push(totalPad);
+    mIdealW.push(wIdeal);
+  }
+
+  // Measure widths and starts per system
+  const mW = new Float64Array(tune.measures);
+  const mXArr = new Float64Array(tune.measures);
+  for (let k = 0; k < sysN; k++) {
+    const mFirst = k * perSys, mLast = Math.min(tune.measures, mFirst + perSys) - 1;
+    const nBars = mLast - mFirst + 1;
+    const availW = width - hdrW(k) - 2;
+    let sysIdealSum = 0;
+    for (let m = mFirst; m <= mLast; m++) sysIdealSum += mIdealW[m];
+
+    let curX = hdrW(k);
+    for (let m = mFirst; m <= mLast; m++) {
+      mXArr[m] = curX;
+      let w;
+      if (nBars === perSys) {
+        w = availW * (mIdealW[m] / sysIdealSum);
+      } else {
+        const avgIdeal = sysIdealSum / nBars;
+        w = (availW / perSys) * (mIdealW[m] / (avgIdeal || 1));
+      }
+      mW[m] = w;
+      curX += w;
+    }
+  }
+
+  const mw = m => mW[m];
+  const mX = m => mXArr[m];
+
+  // Precompute onset positions for each measure
+  const mPos = [];
+  const mLeft = 1.6 * sp, mRight = 1.2 * sp;
+  for (let m = 0; m < tune.measures; m++) {
+    const ons = mOnsets[m], wts = mWeights[m], totW = mTotalW[m];
+    const wDur = Math.max(0, mW[m] - mLeft - mRight - mTotalPad[m]);
+    let x = mXArr[m] + mLeft + (padAt.get(m)?.get(0) || 0);
+    const posArr = [x];
+    for (let j = 0; j < ons.length - 1; j++) {
+      const dx = totW > 0 ? wDur * (wts[j] / totW) : 0;
+      const padNext = padAt.get(m)?.get(ons[j + 1]) || 0;
+      x += dx + padNext;
+      posArr.push(x);
+    }
+    mPos.push(posArr);
+  }
+
   const tx = (m, tick, inclusive = true) => {
-    const list = pads.get(m) || [];
-    const total = list.reduce((a, [, w]) => a + w, 0);
-    const before = list.reduce((a, [t, w]) => a + ((inclusive ? t <= tick : t < tick) ? w : 0), 0);
-    return mX(m) + 1.5 * sp + before + (tick / tpm) * (mw(sysOf(m)) - 2.7 * sp - total);
+    const ons = mOnsets[m], posArr = mPos[m];
+    if (!ons || ons.length <= 1) {
+      return mXArr[m] + mLeft + (tick / tpm) * (mW[m] - mLeft - mRight);
+    }
+    let j = 0;
+    while (j < ons.length - 2 && tick > ons[j + 1]) j++;
+    const t0 = ons[j], t1 = ons[j + 1];
+    const padT = padAt.get(m)?.get(tick) || 0;
+    if (tick === t0) return inclusive ? posArr[j] : posArr[j] - padT;
+    if (tick === t1) return inclusive ? posArr[j + 1] : posArr[j + 1] - padT;
+    const padNext = padAt.get(m)?.get(t1) || 0;
+    const netDx = posArr[j + 1] - padNext - posArr[j];
+    const frac = (tick - t0) / (t1 - t0);
+    return posArr[j] + frac * netDx;
   };
 
   const staff = [], implicit = [], beams = [], events = staves.map(() => new Map());
@@ -181,7 +267,7 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
   const systems = [];
   for (let k = 0; k < sysN; k++) {
     const mFirst = k * perSys, mLast = Math.min(tune.measures, mFirst + perSys) - 1;
-    const xEnd = mX(mLast) + mw(k);
+    const xEnd = mX(mLast) + mw(mLast);
     const yTop = yB(k) - 4 * sp, yBot = yB(k, nSt - 1);
     systems.push({ k, mFirst, mLast, xStart: mX(mFirst), xEnd, top: yTop, bottom: yBot });
     for (const { s, bass } of staves) {
@@ -201,7 +287,7 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     }
     // Bar lines run through every staff of the system.
     for (let m = mFirst; m <= mLast; m++) {
-      const bx = mX(m) + mw(k);
+      const bx = mX(m) + mw(m);
       if (m === tune.measures - 1) {
         staff.push(line(bx - 0.75 * sp, yTop, bx - 0.75 * sp, yBot, 'bar'));
         staff.push({ t: 'rect', x: bx - 0.5 * sp, y: yTop, w: 0.5 * sp, h: yBot - yTop, cls: 'ink' });
@@ -317,7 +403,7 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     }
     for (const m of empties) {
       const k = sysOf(m);
-      implicit.push(glyph(mX(m) + mw(k) / 2 - 0.56 * sp, Y(k, 6), G.rW, 'g faint'));
+      implicit.push(glyph(mX(m) + mw(m) / 2 - 0.56 * sp, Y(k, 6), G.rW, 'g faint'));
     }
   }
 
