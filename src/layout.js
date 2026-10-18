@@ -336,7 +336,7 @@ export function layout(tune, { width, perSys = 4, sp = 10 }) {
     locate(x, y) {
       const k = Math.floor(y / sysH);
       const sys = systems[k];
-      if (!sys || x < sys.xStart - 0.5 * sp || x > sys.xEnd) return null;
+      if (!sys || x < sys.xStart - 1.5 * sp || x > sys.xEnd) return null;
       let s = 0;
       while (s < nSt - 1 && y > yB(k, s) + (gap - 4 * sp) / 2) s++;
       let m = sys.mFirst;
