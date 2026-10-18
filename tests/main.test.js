@@ -21,7 +21,10 @@ function createElement(tag = 'div', attrs = {}) {
       },
       contains(c) { return this._classes.has(c); },
     },
-    style: {},
+    style: {
+      setProperty(k, v) { this[k] = v; },
+      removeProperty(k) { delete this[k]; },
+    },
     attributes: {},
     setAttribute(k, v) { this.attributes[k] = String(v); },
     getAttribute(k) { return this.attributes[k]; },
@@ -83,7 +86,7 @@ test('main.js loads, parses URL fragment, and renders without unhandled exceptio
     'undo', 'undoSm', 'redo', 'play', 'loop', 'preview', 'new', 'newPop',
     'newCancel', 'newOk', 'copy', 'exportXml', 'theme', 'sheet',
     'sheetClose', 'help', 'debug', 'debugDump', 'debugClose', 'debugCopy',
-    'settingsToggle', 'noteBar',
+    'settingsToggle', 'noteBar', 'hdSamples', 'hdBadge', 'hdText', 'hdRingFill', 'hdField',
   ];
   for (const id of elementIds) {
     elements[id] = createElement('div', { id });
@@ -137,4 +140,11 @@ test('main.js loads, parses URL fragment, and renders without unhandled exceptio
 
   assert.ok(elements.staffHost.innerHTML.length > 0, 'Staff should have rendered SVG markup');
   assert.equal(elements.title.value, 'Phantom of the Opera');
+
+  // Verify toggling hdSamples invokes onchange cleanly without exceptions
+  assert.equal(typeof elements.hdSamples.onchange, 'function');
+  elements.hdSamples.checked = true;
+  assert.doesNotThrow(() => elements.hdSamples.onchange());
+  elements.hdSamples.checked = false;
+  assert.doesNotThrow(() => elements.hdSamples.onchange());
 });

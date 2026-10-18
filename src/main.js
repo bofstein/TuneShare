@@ -14,7 +14,7 @@ import * as M from './model.js';
 import { VERSION, decode } from './codec.js';
 import { layout } from './layout.js';
 import { OVERLAY, renderOverlay, renderSystems } from './render.js';
-import { Player, preview, setInstrument, warmTune } from './audio.js';
+import { Player, preview, setInstrument, warmTune, isHdSamplesEnabled, setHdSamplesEnabled, ensure, onSampleProgress, getSampleLoadingProgress } from './audio.js';
 import { DEFAULT_INSTRUMENT, INSTRUMENTS } from './instruments.js';
 import { Store } from './store.js';
 import { toggleTheme } from './theme.js';
@@ -43,7 +43,7 @@ import {
   typeLetter,
   typeRest,
 } from './editor.js';
-import { formatAriaLabel, formatHint, formatReadout, formatSettingsSummary } from './ui-format.js';
+import { formatAriaLabel, formatHdStatus, formatHint, formatReadout, formatSettingsSummary } from './ui-format.js';
 import { ERRORS, setToastContainer, showError, toast, warnFull } from './toast.js';
 import { copyLink, exportMusicXml, initDebugModal, initNewPopover, initShortcutSheet } from './dialogs.js';
 import { initGestures } from './gestures.js';
@@ -384,8 +384,66 @@ $('instrument').onchange = e => {
   const id = e.target.value;
   setField({ instrument: id === DEFAULT_INSTRUMENT ? undefined : id });
   setInstrument(id);
-  if (previewOn) preview({ step: 0, oct: 4, alter: 0 }, { step: 2, oct: 4, alter: 0 }, { step: 4, oct: 4, alter: 0 });
+  warmTune(store.tune);
+  if (previewOn && !player.playing) preview({ step: 0, oct: 4, alter: 0 }, { step: 2, oct: 4, alter: 0 }, { step: 4, oct: 4, alter: 0 });
 };
+const hdEl = $('hdSamples');
+const hdBadge = $('hdBadge');
+const hdText = $('hdText');
+const hdRingFill = $('hdRingFill');
+const hdField = $('hdField');
+
+function updateHdProgress(p) {
+  if (!p) p = getSampleLoadingProgress(store.tune);
+  const status = formatHdStatus(isHdSamplesEnabled(), p);
+  if (hdEl) hdEl.checked = status.enabled;
+  if (!hdBadge || !hdText || !hdRingFill) return;
+
+  if (hdField) hdField.title = status.title;
+
+  if (!status.enabled) {
+    hdBadge.classList.remove('loading', 'ready');
+    if (hdText.style && typeof hdText.style.removeProperty === 'function') {
+      hdText.style.removeProperty('--hd-pct');
+    }
+    hdText.classList.remove('active');
+    return;
+  }
+
+  hdText.classList.add('active');
+  if (hdText.style && typeof hdText.style.setProperty === 'function') {
+    hdText.style.setProperty('--hd-pct', `${status.percent}%`);
+  }
+
+  if (hdRingFill.style) {
+    hdRingFill.style.strokeDashoffset = `${status.ringOffset}`;
+  }
+
+  hdBadge.classList.toggle('ready', status.badgeClass === 'ready');
+  hdBadge.classList.toggle('loading', status.badgeClass === 'loading');
+}
+
+if (hdEl) {
+  hdEl.checked = isHdSamplesEnabled();
+  hdEl.onchange = () => {
+    setHdSamplesEnabled(hdEl.checked);
+    if (hdEl.checked) ensure();
+    warmTune(store.tune);
+    updateHdProgress();
+    if (player.playing) {
+      player.rescheduleFuture();
+    } else if (previewOn) {
+      preview({ step: 0, oct: 4, alter: 0 }, { step: 2, oct: 4, alter: 0 }, { step: 4, oct: 4, alter: 0 });
+    }
+  };
+  onSampleProgress(p => {
+    updateHdProgress(p);
+    if (player.playing && isHdSamplesEnabled()) {
+      player.rescheduleFuture();
+    }
+  });
+  updateHdProgress();
+}
 $('time').onchange = e => {
   stopPlayback();
   const r = M.setTime(store.tune, e.target.value);

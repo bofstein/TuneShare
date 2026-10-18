@@ -8,6 +8,7 @@ import {
   formatSettingsSummary,
   formatAriaLabel,
   formatGhostTip,
+  formatHdStatus,
   kbd,
 } from '../src/ui-format.js';
 
@@ -120,4 +121,39 @@ test('formatGhostTip provides descriptive insertion hints', () => {
   };
   const tipPush2 = formatGhostTip(slotAtEnd, 0, tuneWith2Notes, 2);
   assert.equal(tipPush2.sub, 'pushes 2 notes later');
+});
+
+test('formatHdStatus formats disabled, loading, and ready states accurately', () => {
+  // Disabled state
+  const disabled = formatHdStatus(false, { loaded: 2, total: 4, percent: 50, ready: false });
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.active, false);
+  assert.equal(disabled.percent, 0);
+  assert.equal(disabled.ringOffset, 37.7);
+  assert.equal(disabled.badgeClass, '');
+  assert.match(disabled.title, /Stream & cache/);
+
+  // Loading partial state
+  const partial = formatHdStatus(true, { loaded: 3, total: 6, percent: 50, ready: false });
+  assert.equal(partial.enabled, true);
+  assert.equal(partial.active, true);
+  assert.equal(partial.percent, 50);
+  assert.equal(partial.ringOffset, 18.9); // 37.7 * 0.5 = 18.85 rounded to 18.9
+  assert.equal(partial.badgeClass, 'loading');
+  assert.equal(partial.title, 'HD Samples: loading 3/6 notes (50%)');
+
+  // Completed ready state
+  const ready = formatHdStatus(true, { loaded: 6, total: 6, percent: 100, ready: true });
+  assert.equal(ready.enabled, true);
+  assert.equal(ready.active, true);
+  assert.equal(ready.percent, 100);
+  assert.equal(ready.ringOffset, 0);
+  assert.equal(ready.badgeClass, 'ready');
+  assert.equal(ready.title, 'HD Samples (all 6 notes ready)');
+
+  // Default empty progress
+  const empty = formatHdStatus(true, null);
+  assert.equal(empty.ready, undefined);
+  assert.equal(empty.badgeClass, 'ready');
+  assert.equal(empty.percent, 100);
 });

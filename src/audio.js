@@ -307,7 +307,10 @@ function addGuitarPluck(out, sr, f0, isElectric) {
 function renderPercussive(inst, f0, sr, amps) {
   const dur = inst === 'piano' ? 5.2 : 2.4, n = Math.floor(sr * dur), out = new Float32Array(n);
   const prof = customProfiles[inst], v = prof?.voicing ?? 'kawai', yamaha = v === 'yamaha', local = v === 'kg2a' || v === 'local';
-  const B = prof?.B ?? (inst === 'piano' ? 0.00011 * ((f0 / 261.63) ** 0.65) : inst === 'epiano' ? 0 : 0.00007);
+  // Piano inharmonicity curve: rises in deep wound bass and short treble, minimal in mid register (Fletcher & Rossing)
+  const octOffset = Math.log2(f0 / 261.63);
+  const bPianoCurve = 0.000095 * (1 + 0.36 * (octOffset < 0 ? octOffset * octOffset : octOffset * 1.35));
+  const B = prof?.B ?? (inst === 'piano' ? bPianoCurve : inst === 'epiano' ? 0 : 0.00007);
   // Kawai RX/GX Warm Grand default: warm singing decay with authentic grand piano string resonance
   const tSlowExp = inst === 'epiano' ? 0.25 : (inst === 'piano' && local ? 0.62 : 0.46);
   const tSlowBase = Math.max(0.35, (prof?.tSlow ?? { piano: yamaha ? 1.85 : 2.2, epiano: 1.75, guitar: 0.78, eguitar: 1.25 }[inst]) * ((261.63 / f0) ** tSlowExp));
@@ -335,18 +338,30 @@ function renderPercussive(inst, f0, sr, amps) {
     const tauF = Math.max(0.014, (tFastBase * (wTransient ? 0.45 : 1)) / (k ** (inst === 'guitar' ? 0.92 : 0.72)));
     const tauS = Math.max(0.04, tSlowBase / (k ** (inst === 'guitar' ? 0.85 : inst === 'eguitar' ? 0.58 : 0.72)));
     const df = Math.exp(-1 / (sr * tauF)), ds = Math.exp(-1 / (sr * tauS));
-    const df32 = df ** 32, ds32 = ds ** 32, wb32 = 2 * Math.PI * (0.32 + 0.15 * k) * 32 / sr, cwb32 = Math.cos(wb32), swb32 = Math.sin(wb32);
+    const df32 = df ** 32, ds32 = ds ** 32;
+    // Register-scaled beating rate: slow unisons on bass (0.2Hz), active trichord bloom on mid/treble (0.4-0.8Hz)
+    const wbRate = inst === 'piano'
+      ? (0.20 + 0.14 * Math.sqrt(Math.max(40, f0) / 261.63) + 0.06 * (k - 1))
+      : (0.32 + 0.15 * k);
+    const wb32 = 2 * Math.PI * wbRate * 32 / sr, cwb32 = Math.cos(wb32), swb32 = Math.sin(wb32);
     const w = 2 * Math.PI * fk / sr, cw = Math.cos(w), sw = Math.sin(w);
     let re = Math.cos(k * 0.4), im = Math.sin(k * 0.4), rb = 1, ib = 0;
+    // Coupled unison detuning for acoustic piano trichords on fundamental and octave (authentic prompt-to-aftersound interference)
+    const coupledUnison = inst === 'piano' && k <= 2;
+    let re2 = Math.cos(k * 0.4 + 0.5), im2 = Math.sin(k * 0.4 + 0.5);
+    const w2 = coupledUnison ? 2 * Math.PI * (fk + (k === 1 ? 0.28 : -0.32)) / sr : w;
+    const cw2 = Math.cos(w2), sw2 = Math.sin(w2);
     let ef = wf, es = 1 - (k > 1 ? wFastBase : wFastBase * 0.48), ea = 1;
     const nAtkEnd = Math.min(n, Math.floor(sr * tauAtk * 8));
     const nActive = Math.min(n, Math.floor(sr * Math.max(0.35, tauS * 4.5)));
     // Phase 1: fast per-sample attack & transient window (first ~10–40ms)
     for (let i = 0; i < nAtkEnd; i++) {
       const atk = (1 - ea) * (1 - 0.35 * ea);
-      out[i] += amp * atk * (ef + es) * im;
+      const osc = coupledUnison ? (0.68 * im + 0.32 * im2) : im;
+      out[i] += amp * atk * (ef + es) * osc;
       ef *= df; es *= ds; ea *= dAtk;
       const nr = re * cw - im * sw; im = re * sw + im * cw; re = nr;
+      if (coupledUnison) { const nr2 = re2 * cw2 - im2 * sw2; im2 = re2 * sw2 + im2 * cw2; re2 = nr2; }
     }
     // Phase 2: 1 kHz control-rate block envelope + unison string-beating interpolation (zero subnormals, ~3x fewer ops)
     let curEnv = amp * (ef + es) * (inst === 'epiano' ? 1 : 0.86 + 0.14 * rb), dEnv = 0;
@@ -358,8 +373,10 @@ function renderPercussive(inst, f0, sr, amps) {
         dEnv = (nextEnv - curEnv) * 0.03125;
       }
       curEnv += dEnv;
-      out[i] += curEnv * im;
+      const osc = coupledUnison ? (0.68 * im + 0.32 * im2) : im;
+      out[i] += curEnv * osc;
       const nr = re * cw - im * sw; im = re * sw + im * cw; re = nr;
+      if (coupledUnison) { const nr2 = re2 * cw2 - im2 * sw2; im2 = re2 * sw2 + im2 * cw2; re2 = nr2; }
     }
   }
   const rawSymp = OPEN_STRINGS[inst]
@@ -702,9 +719,11 @@ export function synthesizeNote(inst, midi, sr = SYNTH_SR) {
 let ctx = null, master = null;
 const noteCache = new Map();
 
-function ensure() {
+export function ensure() {
+  if (typeof window === 'undefined') return null;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
   if (!ctx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
     ctx = new AC();
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
     const comp = ctx.createDynamicsCompressor();
@@ -728,8 +747,156 @@ function ensure() {
     master.connect(dry); dry.connect(comp);
     master.connect(conv); conv.connect(wet); wet.connect(comp);
   }
-  if (ctx.state === 'suspended') ctx.resume();
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   return ctx;
+}
+
+export const HD_SAMPLE_GAIN_BOOST = 1.25;
+
+// ---------- HD Audio Sample Engine (On-demand CDN streaming + persistent CacheStorage) ----------
+export const SAMPLE_FOLDERS = {
+  piano: 'acoustic_grand_piano-mp3',
+  epiano: 'electric_piano_1-mp3',
+  guitar: 'acoustic_guitar_steel-mp3',
+  eguitar: 'electric_guitar_clean-mp3',
+  violin: 'violin-mp3',
+  cello: 'cello-mp3',
+  trumpet: 'trumpet-mp3',
+  flute: 'flute-mp3',
+  sax: 'tenor_sax-mp3',
+  choir: 'choir_aahs-mp3',
+  synth: 'lead_1_square-mp3',
+};
+
+const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+export function sampleNoteName(midi) {
+  const step = NOTE_NAMES[((midi % 12) + 12) % 12];
+  const oct = Math.floor(midi / 12) - 1;
+  return `${step}${oct}`;
+}
+
+export function sampleUrl(inst, midi) {
+  const folder = SAMPLE_FOLDERS[inst] || SAMPLE_FOLDERS.piano;
+  return `https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@gh-pages/FluidR3_GM/${folder}/${sampleNoteName(midi)}.mp3`;
+}
+
+const sampleCache = new Map();
+const loadingSamples = new Map();
+let hdSamplesEnabled = false;
+try {
+  hdSamplesEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('tuneshare_hd_samples') === '1';
+} catch {}
+
+let currentWarmingTune = null;
+const progressListeners = new Set();
+
+export function onSampleProgress(fn) {
+  progressListeners.add(fn);
+  return () => progressListeners.delete(fn);
+}
+
+export function getSampleLoadingProgress(tune = currentWarmingTune) {
+  if (!tune) return { loaded: 0, total: 0, percent: 100, ready: true };
+  const inst = tune.instrument || instrument || 'piano';
+  const ordered = tunePlaybackOrder(tune);
+  if (!ordered.length) return { loaded: 0, total: 0, percent: 100, ready: true };
+  let loaded = 0;
+  for (const m of ordered) {
+    if (sampleCache.has(`${inst}:${m}`)) loaded++;
+  }
+  const percent = Math.round((loaded / ordered.length) * 100);
+  return { loaded, total: ordered.length, percent, ready: loaded === ordered.length };
+}
+
+function emitSampleProgress(tune = currentWarmingTune) {
+  if (progressListeners.size === 0) return;
+  const p = getSampleLoadingProgress(tune);
+  for (const fn of progressListeners) {
+    try { fn(p); } catch {}
+  }
+}
+
+export function isHdSamplesEnabled() { return hdSamplesEnabled; }
+export function setHdSamplesEnabled(enabled) {
+  hdSamplesEnabled = Boolean(enabled);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (enabled) localStorage.setItem('tuneshare_hd_samples', '1');
+      else localStorage.removeItem('tuneshare_hd_samples');
+    }
+  } catch {}
+  emitSampleProgress();
+}
+
+export function clearSampleCache() {
+  sampleCache.clear();
+  loadingSamples.clear();
+  emitSampleProgress();
+}
+
+export async function loadSample(inst, midi) {
+  const key = `${inst}:${midi}`;
+  if (sampleCache.has(key)) return sampleCache.get(key);
+  if (loadingSamples.has(key)) return loadingSamples.get(key);
+  if (!ctx) ensure();
+  if (!ctx || typeof fetch === 'undefined') return null;
+
+  const url = sampleUrl(inst, midi);
+  const promise = (async () => {
+    try {
+      let cache = null;
+      try {
+        if (typeof caches !== 'undefined') cache = await caches.open('tuneshare-samples-v1');
+      } catch {}
+      let resp = null;
+      if (cache) {
+        resp = await cache.match(url);
+        if (!resp) {
+          resp = await fetch(url);
+          if (resp && resp.ok) cache.put(url, resp.clone());
+        }
+      } else {
+        resp = await fetch(url);
+      }
+      if (!resp || !resp.ok) return null;
+      const arrayBuf = await resp.arrayBuffer();
+      const audioBuf = await ctx.decodeAudioData(arrayBuf);
+      let peak = 0;
+      for (let ch = 0; ch < audioBuf.numberOfChannels; ch++) {
+        const data = audioBuf.getChannelData(ch);
+        for (let i = 0; i < data.length; i++) {
+          const a = Math.abs(data[i]);
+          if (a > peak) peak = a;
+        }
+      }
+      if (peak > 0.02) {
+        const scale = Math.min(3.8, 0.96 / peak);
+        for (let ch = 0; ch < audioBuf.numberOfChannels; ch++) {
+          const data = audioBuf.getChannelData(ch);
+          for (let i = 0; i < data.length; i++) data[i] *= scale;
+        }
+      }
+      const isSus = SUSTAINED.has(inst);
+      const entry = {
+        buf: audioBuf,
+        loopStart: isSus ? Math.max(0.4, audioBuf.duration * 0.3) : 0,
+        loopEnd: isSus ? Math.max(0.8, audioBuf.duration * 0.8) : 0,
+        sustained: isSus,
+        isSample: true,
+      };
+      sampleCache.set(key, entry);
+      emitSampleProgress();
+      return entry;
+    } catch {
+      return null;
+    } finally {
+      loadingSamples.delete(key);
+      emitSampleProgress();
+    }
+  })();
+
+  loadingSamples.set(key, promise);
+  return promise;
 }
 
 let instrument = 'piano';
@@ -738,6 +905,10 @@ export function setInstrument(id) { instrument = id || 'piano'; }
 
 function getNoteBuffer(inst, midi) {
   const key = `${inst}:${midi}`;
+  if (hdSamplesEnabled && sampleCache.has(key)) return sampleCache.get(key);
+  if (hdSamplesEnabled && !loadingSamples.has(key)) {
+    loadSample(inst, midi).catch(() => {});
+  }
   if (noteCache.has(key)) return noteCache.get(key);
   if (noteCache.size > 160) noteCache.delete(noteCache.keys().next().value);
   const spec = synthesizeNote(inst, midi, SYNTH_SR);
@@ -748,19 +919,72 @@ function getNoteBuffer(inst, midi) {
   return entry;
 }
 
-let warmTimer = 0;
-/** Pre-render and cache the unique pitches used in `tune` for the current instrument on idle ticks. */
-export function warmTune(tune) {
-  if (!ctx || !tune) return;
-  clearTimeout(warmTimer);
-  const inst = tune.instrument || instrument || 'synth';
-  const needed = new Set();
+export function tunePlaybackOrder(tune) {
+  if (!tune) return [];
+  const timeline = [];
   for (const st of staffList(tune)) {
+    let t = 0;
     for (const e of st.events) {
-      if (!e.rest) for (const p of pitchesOf(e)) needed.add(midiOf(p));
+      if (!e.rest) {
+        for (const p of pitchesOf(e)) timeline.push({ tick: t, midi: midiOf(p) });
+      }
+      t += ticksOf(e);
     }
   }
-  const queue = [...needed].filter(m => !noteCache.has(`${inst}:${m}`));
+  timeline.sort((a, b) => a.tick - b.tick);
+  const ordered = [];
+  const seen = new Set();
+  for (const item of timeline) {
+    if (!seen.has(item.midi)) {
+      seen.add(item.midi);
+      ordered.push(item.midi);
+    }
+  }
+  return ordered;
+}
+
+let sampleQueue = [];
+let sampleLoadingCount = 0;
+const MAX_CONCURRENT_SAMPLE_FETCHES = 3;
+
+function pumpSampleQueue() {
+  while (sampleLoadingCount < MAX_CONCURRENT_SAMPLE_FETCHES && sampleQueue.length > 0) {
+    const item = sampleQueue.shift();
+    sampleLoadingCount++;
+    loadSample(item.inst, item.midi)
+      .catch(() => {})
+      .finally(() => {
+        sampleLoadingCount--;
+        pumpSampleQueue();
+      });
+  }
+}
+
+export function preloadSamples(inst, midis) {
+  if (!ctx) ensure();
+  sampleQueue = midis
+    .filter(m => !sampleCache.has(`${inst}:${m}`) && !loadingSamples.has(`${inst}:${m}`))
+    .map(m => ({ inst, midi: m }));
+  emitSampleProgress();
+  pumpSampleQueue();
+}
+
+let warmTimer = 0;
+/** Pre-render and cache the unique pitches used in `tune` in playback order on idle ticks. */
+export function warmTune(tune) {
+  if (!tune) return;
+  currentWarmingTune = tune;
+  clearTimeout(warmTimer);
+  const inst = tune.instrument || instrument || 'synth';
+  const ordered = tunePlaybackOrder(tune);
+  if (hdSamplesEnabled) {
+    if (!ctx) ensure();
+    preloadSamples(inst, ordered);
+  } else {
+    emitSampleProgress(tune);
+  }
+  if (!ctx) return;
+  const queue = ordered.filter(m => !noteCache.has(`${inst}:${m}`));
   const step = () => {
     for (let k = 0; k < 2 && queue.length; k++) getNoteBuffer(inst, queue.shift());
     if (queue.length) warmTimer = setTimeout(step, 4);
@@ -768,9 +992,26 @@ export function warmTune(tune) {
   if (queue.length) warmTimer = setTimeout(step, 0);
 }
 
+function addDamperThump(midi, time, level) {
+  if (!ctx || level <= 0.04 || midi > 84) return;
+  try {
+    const f0 = freqOf(midi);
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.frequency.setValueAtTime(Math.min(240, Math.max(130, f0 * 0.45)), time);
+    g.gain.setValueAtTime(0.016 * level, time);
+    g.gain.exponentialRampToValueAtTime(0.0001, time + 0.024);
+    osc.connect(g);
+    g.connect(master);
+    osc.start(time);
+    osc.stop(time + 0.026);
+  } catch {}
+}
+
 /** Schedule one cached note with smooth attack and click-free release shaping; returns a handle that can be cut short. */
 function voice(midi, start, dur, level = 1, phraseStart = true) {
   const entry = getNoteBuffer(instrument, midi);
+  const effLevel = (entry.isSample ? HD_SAMPLE_GAIN_BOOST : 1.0) * level;
   const bowed = instrument === 'violin' || instrument === 'cello';
   const end = start + Math.max(dur, 0.06);
   const atk = Math.min(entry.sustained ? (instrument === 'choir' ? 0.025 : bowed && !phraseStart ? 0.022 : 0.010) : 0.003, dur * 0.35);
@@ -778,22 +1019,26 @@ function voice(midi, start, dur, level = 1, phraseStart = true) {
     ? (instrument === 'choir' ? 0.18 : bowed ? 0.12 : 0.09)
     : (instrument === 'piano' || instrument === 'epiano' ? 0.26 : 0.14);
   const env = ctx.createGain();
-  // Pure linear ramps from (start, 0) -> (start + atk, level) -> (end, level) -> (end + release, 0)
+  // Pure linear ramps from (start, 0) -> (start + atk, effLevel) -> (end, effLevel) -> (end + release, 0)
   // Avoids the Web Audio setTargetAtTime + linearRampToValueAtTime step discontinuity!
   env.gain.setValueAtTime(0, start);
-  env.gain.linearRampToValueAtTime(level * 0.38, start + atk * 0.45);
+  env.gain.linearRampToValueAtTime(effLevel * 0.38, start + atk * 0.45);
   // Phrase-start bow grab on violin/cello has a slight initial rosin bite before settling into expressive sustain
   if (bowed && phraseStart && dur > 0.12) {
-    env.gain.linearRampToValueAtTime(level * 1.12, start + atk);
-    env.gain.linearRampToValueAtTime(level * 0.96, start + Math.min(dur * 0.6, atk + 0.055));
-    env.gain.linearRampToValueAtTime(level, end);
+    env.gain.linearRampToValueAtTime(effLevel * 1.12, start + atk);
+    env.gain.linearRampToValueAtTime(effLevel * 0.96, start + Math.min(dur * 0.6, atk + 0.055));
+    env.gain.linearRampToValueAtTime(effLevel, end);
   } else {
-    env.gain.linearRampToValueAtTime(level, start + atk);
-    env.gain.setValueAtTime(level, end);
+    env.gain.linearRampToValueAtTime(effLevel * 0.38, start + atk * 0.45);
+    env.gain.linearRampToValueAtTime(effLevel, start + atk);
+    env.gain.setValueAtTime(effLevel, end);
   }
-  env.gain.linearRampToValueAtTime(level * 0.32, end + release * 0.55);
+  env.gain.linearRampToValueAtTime(effLevel * 0.32, end + release * 0.55);
   env.gain.linearRampToValueAtTime(0, end + release);
   env.connect(master);
+  if ((instrument === 'piano' || instrument === 'epiano') && midi <= 84) {
+    addDamperThump(midi, end, effLevel);
+  }
   const src = ctx.createBufferSource();
   src.buffer = entry.buf;
   if (entry.sustained) { src.loop = true; src.loopStart = entry.loopStart; src.loopEnd = entry.loopEnd; }
@@ -911,6 +1156,15 @@ export class Player {
     this.playing = false;
     this.voices = [];
     this.ticker = createTicker(35, () => this.tick?.());
+    this._reschedule = null;
+  }
+
+  /**
+   * Cancel and reschedule upcoming notes that haven't sounded yet (t0 > now + cutMargin)
+   * so checking/unchecking HD samples transitions immediately on the very next note.
+   */
+  rescheduleFuture(cutMargin = 0.035) {
+    if (this._reschedule) this._reschedule(cutMargin);
   }
 
   /**
@@ -959,12 +1213,39 @@ export class Player {
       schedule.sort((x, y) => x.t1 - y.t1);
       return startTime + (fromTick === 0 ? loopTicks : contentEnd - fromTick) * secPerTick;
     };
+    const getLookahead = () => (typeof document !== 'undefined' && document.hidden ? 2.0 : 0.25);
     const flushPending = now => {
-      while (pending.length && pending[0].t0 <= now + 2.0) {
+      const lookahead = getLookahead();
+      while (pending.length && pending[0].t0 <= now + lookahead) {
         const n = pending.shift();
-        this.voices.push({ end: n.t0 + n.dur + 0.3, h: voice(n.midi, n.t0, n.dur, n.level, n.phraseStart) });
+        this.voices.push({
+          t0: n.t0,
+          end: n.t0 + n.dur + 0.3,
+          h: voice(n.midi, n.t0, n.dur, n.level, n.phraseStart),
+          note: n,
+        });
       }
       while (this.voices.length && this.voices[0].end < now) this.voices.shift();
+    };
+    this._reschedule = (cutMargin = 0.035) => {
+      if (!this.playing || !ctx) return;
+      const now = c.currentTime;
+      const keep = [];
+      const toReschedule = [];
+      for (const v of this.voices) {
+        if (v.t0 <= now + cutMargin) {
+          keep.push(v);
+        } else {
+          try { v.h?.cut(now); } catch {}
+          if (v.note) toReschedule.push(v.note);
+        }
+      }
+      this.voices = keep;
+      if (toReschedule.length) {
+        pending.push(...toReschedule);
+        pending.sort((a, b) => a.t0 - b.t0);
+      }
+      flushPending(now);
     };
     let passEnd = pass(c.currentTime + 0.05, from);
     flushPending(c.currentTime);
@@ -973,7 +1254,8 @@ export class Player {
     const scheduleAhead = () => {
       if (!this.playing) return;
       const now = c.currentTime;
-      if (loop() && now > passEnd - 2.0) passEnd = pass(passEnd, 0);
+      const lookahead = getLookahead();
+      if (loop() && now > passEnd - Math.max(0.6, lookahead)) passEnd = pass(passEnd, 0);
       flushPending(now);
       if (now >= passEnd && !loop()) { this.stop(); onEnd(); return; }
       while (schedule.length && schedule[0].t1 < now - 1) schedule.shift();
@@ -997,9 +1279,10 @@ export class Player {
     if (!this.playing && !this.voices.length) return;
     this.playing = false;
     this.tick = null;
+    this._reschedule = null;
     this.ticker.stop();
     cancelAnimationFrame(this.raf);
-    if (ctx) { const now = ctx.currentTime; this.voices.forEach(v => v.h.cut(now)); }
+    if (ctx) { const now = ctx.currentTime; this.voices.forEach(v => v.h?.cut(now)); }
     this.voices = [];
   }
 }

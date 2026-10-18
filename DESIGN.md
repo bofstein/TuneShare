@@ -266,8 +266,14 @@ lenient decoding of truncated links.
   apply smooth S-curve/linear amplitude shaping at note onset and release so
   attacks and damping are completely click-free. Piano also applies phrase-aware
   sustain (`phraseSustainTicks`) so broken chords and bass notes ring across
-  harmonic phrases until a rest, bar/half-bar boundary, repeated pitch or
-  scale-step clash. Each note of a chord plays at 1/√n volume through a room
+  scale-step clash. When a key releases, acoustic felt dampers drop onto the strings
+  with a gentle mechanical contact thump. An optional **HD Samples** toggle (`#hdSamples`)
+  allows streaming real acoustic instrument recordings on-demand from open-source
+  CDN soundfonts (`FluidR3_GM`), caching them asynchronously in browser `CacheStorage`
+  (~25 KB per note) with instant fallback to procedural synthesis when offline or downloading.
+  Notes preload in exact chronological playback order upon enabling HD, accompanied by a
+  dynamic text fill-in and circular progress ring indicator. Decoded samples are normalized to
+  match procedural synthesis loudness. Each note of a chord plays at 1/√n volume through a room
   convolver and compressor.
 
 ## UI principles

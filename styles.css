@@ -88,6 +88,23 @@ button:disabled { cursor: default; }
 .stepper input:focus { outline: none; }
 .muted { color: var(--ink-3); font-size: 12.5px; }
 .select { height: 34px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--surface); font-weight: 550; }
+.check { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; margin: 0; }
+.lbl-inline { font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; cursor: pointer; user-select: none; }
+.hd-lbl { display: inline-flex; align-items: center; gap: 5px; }
+.hd-text { transition: color .2s ease; }
+.hd-text.active {
+  background: linear-gradient(90deg, var(--accent) var(--hd-pct, 0%), var(--ink-2) var(--hd-pct, 0%));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hd-badge { display: none; width: 14px; height: 14px; position: relative; vertical-align: middle; }
+.hd-badge.loading, .hd-badge.ready { display: inline-flex; align-items: center; justify-content: center; }
+.hd-ring { width: 14px; height: 14px; transform: rotate(-90deg); transition: opacity .25s ease; }
+.hd-ring-bg { fill: none; stroke: var(--line-2); stroke-width: 2.2; }
+.hd-ring-fill { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 37.7; stroke-dashoffset: 37.7; transition: stroke-dashoffset .22s ease-out; }
+.hd-check { width: 14px; height: 14px; position: absolute; top: 0; left: 0; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0; transform: scale(.6); transition: opacity .22s ease, transform .22s cubic-bezier(.34, 1.56, .64, 1); }
+.hd-badge.ready .hd-ring { opacity: 0; }
+.hd-badge.ready .hd-check { opacity: 1; transform: scale(1); }
 .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 9px; overflow: hidden; height: 34px; }
 .seg button { width: 38px; border: none; background: var(--surface); color: var(--ink-2); display: grid; place-items: center; overflow: hidden; }
 .seg button + button { border-left: 1px solid var(--line); }
