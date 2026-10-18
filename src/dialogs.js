@@ -83,7 +83,7 @@ export function initDebugModal({ debugEl, dumpEl, closeBtn, copyBtn, cardEl, get
     dumpEl.focus();
   };
   const closeDebug = () => { debugEl.hidden = true; cardEl.focus({ preventScroll: true }); };
-  const toggleDebug = () => { debugEl.hidden ? openDebug() : closeDebug(); };
+  const toggleDebug = () => (debugEl.hidden ? openDebug() : closeDebug());
   closeBtn.onclick = closeDebug;
   debugEl.onclick = e => { if (e.target === debugEl) closeDebug(); };
   copyBtn.onclick = async () => {
