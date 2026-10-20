@@ -79,7 +79,7 @@ function createElement(tag = 'div', attrs = {}) {
 test('main.js loads, parses URL fragment, and renders without unhandled exceptions', async () => {
   const elements = {};
   const elementIds = [
-    'toasts', 'staffHost', 'staffCard', 'title', 'bpm', 'tempoWord',
+    'toasts', 'staffHost', 'staffCard', 'title', 'arranger', 'bpm', 'tempoWord',
     'key', 'clefT', 'clefB', 'clefLbl', 'staves1', 'staves2', 'time',
     'instrument', 'measures', 'mUp', 'mDown', 'settingsSummary', 'readout',
     'hint', 'emptyHint', 'dot', 'rest', 'octUp', 'octDown', 'del',

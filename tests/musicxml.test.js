@@ -68,3 +68,9 @@ test('file name', () => {
   assert.equal(fileName({ title: 'A/B: c?' }), 'AB c.musicxml');
   assert.equal(fileName({ title: '' }), 'tune.musicxml');
 });
+
+test('arranger is written as an arranger creator, only when set', () => {
+  const x = toMusicXML(tune(ODE, { measures: 8, arranger: 'A & B' }));
+  assert.match(x, /<creator type="arranger">A &amp; B<\/creator><encoding>/);
+  assert.doesNotMatch(toMusicXML(tune(ODE, { measures: 8 })), /<creator/);
+});

@@ -46,6 +46,10 @@ button:disabled { cursor: default; }
 .logo { --logo-bg: #f4f3ff; --logo-ink: #231e56; width: 32px; height: 32px; border-radius: 8px; background: var(--logo-bg); display: grid; place-items: center; overflow: hidden; }
 .logo i { width: 20px; height: 24px; background: var(--logo-ink); -webkit-mask: url(assets/logo.svg) center / contain no-repeat; mask: url(assets/logo.svg) center / contain no-repeat; }
 [data-theme="dark"] .logo { --logo-bg: #262340; --logo-ink: #b5b0ff; }
+.meta-field { display: flex; flex-direction: column; gap: 1px; margin-left: 10px; min-width: 0; }
+.meta-field .title-field { margin-left: 0; }
+.meta-lbl { padding-left: 11px; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.arranger-field { font-size: 14px; font-weight: 450; }
 .title-field { margin-left: 10px; padding: 5px 10px; border-radius: 8px; border: 1px dashed transparent; background: transparent; font-size: 15px; font-weight: 550; min-width: 0; width: 22ch; }
 .title-field:hover { border-color: var(--line-2); background: var(--surface-2); }
 .title-field:focus { border-style: solid; border-color: var(--accent); background: var(--surface); outline: none; }
@@ -213,7 +217,9 @@ svg.staff { display: block; overflow: visible; }
   .app { padding-bottom: 150px; }
   .app-head { padding: 8px 12px; }
   .brand-name { display: none; }
-  .title-field { margin: 0; flex: 1; width: auto; }
+  .app-head { flex-wrap: wrap; }
+  .meta-field { margin: 0; flex: 1 1 40%; order: 10; }
+  .title-field { margin: 0; width: 100%; }
   #copy .copy-label { font-size: 0; }
   #copy .copy-label::after { content: "Share"; font-size: 13.5px; }
   .tune-bar { padding: 8px 12px; gap: 8px; flex-wrap: nowrap; }

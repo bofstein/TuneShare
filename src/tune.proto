@@ -18,6 +18,7 @@ message Tune {
   repeated Chord chords = 8;  // v1 only: extra pitches of chord events
   Staff    staff2   = 9;  // present = the tune has a second staff (even if empty)
   bytes    voice    = 10; // v2: the first staff's notes, rests and chords as a bit stream
+  string   arranger = 12; // ≤ 60 chars, UTF-8; absent = none
   uint32   instrument = 11; // index into src/instruments.js INSTRUMENTS; 0/absent = soft synth
   // 12+ reserved for future fields (e.g. tie flags, swing)
 }

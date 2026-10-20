@@ -322,6 +322,7 @@ function sync() {
   $('emptyHint').hidden = store.tune.events.length > 0 || twoStaves(store.tune);
 
   if (document.activeElement !== $('title')) $('title').value = t.title;
+  if (document.activeElement !== $('arranger')) $('arranger').value = t.arranger || '';
   if (document.activeElement !== $('bpm')) $('bpm').value = t.bpm;
   $('tempoWord').textContent = tempoWord(t.bpm);
   $('key').value = String(t.key);
@@ -473,6 +474,14 @@ $('title').onchange = e => {
 $('title').onkeydown = e => {
   if (e.key === 'Enter') e.target.blur();
   if (e.key === 'Escape') { e.target.value = tune().title; e.target.blur(); }
+};
+$('arranger').onchange = e => {
+  const v = e.target.value.slice(0, 60).trim();
+  if (v !== (tune().arranger || '')) setField({ arranger: v || undefined });
+};
+$('arranger').onkeydown = e => {
+  if (e.key === 'Enter') e.target.blur();
+  if (e.key === 'Escape') { e.target.value = tune().arranger || ''; e.target.blur(); }
 };
 $('settingsToggle').onclick = () => {
   const bar = document.querySelector('.tune-bar'), open = !bar.classList.contains('open');

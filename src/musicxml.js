@@ -78,7 +78,7 @@ export function toMusicXML(tune) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="4.0">
-${tune.title ? `<work><work-title>${esc(tune.title)}</work-title></work>\n` : ''}<identification><encoding><software>TuneShare</software></encoding></identification>
+${tune.title ? `<work><work-title>${esc(tune.title)}</work-title></work>\n` : ''}<identification>${tune.arranger ? `<creator type="arranger">${esc(tune.arranger)}</creator>` : ''}<encoding><software>TuneShare</software></encoding></identification>
 <part-list><score-part id="P1"><part-name>Music</part-name></score-part></part-list>
 <part id="P1">
 ${out.join('\n')}
