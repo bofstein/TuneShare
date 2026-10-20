@@ -328,3 +328,66 @@ export function swapSel(tune, cursor, dir) {
     staff: s,
   };
 }
+
+/**
+ * Selected range of event indices [from, to] (inclusive), or null. A note cursor with an
+ * `anchor` selects every event between the anchor and the cursor on the same staff.
+ */
+export function selectedRange(cursor) {
+  if (cursor?.type !== 'note') return null;
+  const a = cursor.anchor ?? cursor.index;
+  return [Math.min(a, cursor.index), Math.max(a, cursor.index)];
+}
+
+/** Grow or shrink the range selection by moving its free end to event `index`. */
+export function extendTo(cursor, eventCount, index) {
+  if (!eventCount) return cursor;
+  const s = staffIdx(cursor);
+  const anchor = cursor.type === 'note' ? (cursor.anchor ?? cursor.index) : Math.min(cursor.index, eventCount - 1);
+  const i = Math.max(0, Math.min(eventCount - 1, index));
+  return { type: 'note', index: i, tone: 0, anchor, staff: s };
+}
+
+/** Shift+Left/Right: from a caret, start the range at the event on that side. */
+export function extendSel(cursor, eventCount, dir) {
+  if (cursor.type !== 'note') {
+    const i = dir > 0 ? cursor.index : cursor.index - 1;
+    if (i < 0 || i >= eventCount) return cursor;
+    return { type: 'note', index: i, tone: 0, anchor: i, staff: staffIdx(cursor) };
+  }
+  return extendTo(cursor, eventCount, cursor.index + dir);
+}
+
+/** The events to copy: the selected range, or null when nothing is selected. */
+export function copySel(tune, cursor) {
+  const r = selectedRange(cursor);
+  if (!r) return null;
+  return staffView(tune, cursor).events.slice(r[0], r[1] + 1).map(e => structuredClone(e));
+}
+
+/** Delete every event in a multi-event range. */
+export function deleteRange(tune, cursor) {
+  const r = selectedRange(cursor), s = staffIdx(cursor);
+  return {
+    result: M.splice(staffView(tune, s), r[0], r[1] - r[0] + 1, []),
+    cursor: { type: 'caret', index: r[0], staff: s },
+    staff: s,
+  };
+}
+
+/**
+ * Paste copied events: a multi-event selection is replaced, otherwise they go in after the
+ * selected note or at the caret. Later notes ripple right; the pasted run ends up selected.
+ */
+export function pasteEvents(tune, cursor, clip) {
+  if (!clip?.length) return null;
+  const s = staffIdx(cursor), view = staffView(tune, s), r = selectedRange(cursor);
+  const multi = r && r[1] > r[0];
+  const at = multi ? r[0] : insertIndex(cursor);
+  const events = clip.map(e => structuredClone(e));
+  return {
+    result: M.splice(view, at, multi ? r[1] - r[0] + 1 : 0, events),
+    cursor: { type: 'note', index: at + events.length - 1, tone: 0, anchor: at, staff: s },
+    staff: s,
+  };
+}

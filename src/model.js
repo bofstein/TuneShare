@@ -177,3 +177,8 @@ export function removeStaff(t, s, discard = false) {
   const { staff2, ...rest } = t;
   return { tune: s ? rest : { ...rest, clef: staff2.clef, events: staff2.events } };
 }
+
+// ---------- copy & paste ----------
+/** Replace `count` events at `index` with `events` (count 0 = insert). Ripples like insert. */
+export const splice = (tune, index, count, events) =>
+  withEvents(tune, [...tune.events.slice(0, index), ...events, ...tune.events.slice(index + count)]);

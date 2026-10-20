@@ -24,13 +24,19 @@ import {
   activeDur as getActiveDur,
   addToneLetter,
   cycleTone,
+  copySel,
+  deleteRange,
   deleteSel,
+  extendSel,
+  extendTo,
   moveCursor,
   moveHalfStep,
+  pasteEvents,
   movePitch,
   selectedEvent,
   selectedIndex,
   selectedPitch,
+  selectedRange,
   selectedTone,
   setAlter,
   setDuration,
@@ -70,6 +76,8 @@ const tune = () => staffView(store.tune, store.cursor);
 const selIndex = () => selectedIndex(store.cursor);
 const selected = () => selectedEvent(store.tune, store.cursor);
 const activeDur = () => getActiveDur(store.tune, store.cursor, inputDur);
+const isRange = () => { const r = selectedRange(store.cursor); return !!r && r[1] > r[0]; };
+let clip = null;                // events copied with Ctrl+C (one staff's run of events)
 const edit = fn => () => { stopPlayback(); fn(); };
 
 // ---------- edits & commits ----------
@@ -166,10 +174,12 @@ function render() {
 
 function paintClasses() {
   host.querySelectorAll('.ev').forEach(g => {
-    const i = +g.dataset.i, sel = +g.dataset.s === staffIdx(store.cursor) && i === selIndex();
+    const i = +g.dataset.i, r = selectedRange(store.cursor);
+    const sel = +g.dataset.s === staffIdx(store.cursor) && !!r && i >= r[0] && i <= r[1];
+    const multi = sel && r[1] > r[0];
     g.classList.toggle('sel', sel);
     g.classList.toggle('play', playing.includes(`${g.dataset.s}:${i}`));
-    g.querySelectorAll('.halo').forEach(h => h.classList.toggle('on', sel && +h.dataset.tone === selectedTone(store.tune, store.cursor)));
+    g.querySelectorAll('.halo').forEach(h => h.classList.toggle('on', sel && (multi || +h.dataset.tone === selectedTone(store.tune, store.cursor))));
   });
 }
 
@@ -214,6 +224,7 @@ const gestures = initGestures({
   getLay: () => lay,
   getInputDur: () => inputDur,
   onSelect: select,
+  onExtendTo: i => store.setCursor(extendTo(store.cursor, tune().events.length, i)),
   onEdit: opFn => edit(() => applyOp(opFn()))(),
   onPlaceNote: (h, dur) => {
     const st = h.slot.st, view = M.staffView(store.tune, st);
@@ -238,6 +249,22 @@ const gestures = initGestures({
   isPlaying: () => player.playing,
   stopPlayback,
 });
+
+// ---------- copy & paste ----------
+function copyNotes() {
+  const events = copySel(store.tune, store.cursor);
+  if (!events) return false;
+  clip = events;
+  const n = events.length;
+  toast({ title: `Copied ${n} ${n === 1 ? 'note' : 'notes'}`, body: 'Pick a spot and press Ctrl+V to paste.', ms: 2500 });
+  return true;
+}
+
+function pasteNotes() {
+  if (!clip) return false;
+  edit(() => applyOp(pasteEvents(store.tune, store.cursor, clip)))();
+  return true;
+}
 
 // ---------- keyboard ----------
 initKeyboard({
@@ -282,10 +309,22 @@ initKeyboard({
       if (e && !e.rest && previewOn && !player.playing) preview(...M.pitchesOf(e));
     } else store.setCursor(next);
   },
-  onDeleteSel: () => edit(() => applyOp(deleteSel(store.tune, store.cursor)))(),
+  onExtendSel: dir => store.setCursor(extendSel(store.cursor, tune().events.length, dir)),
+  onCopy: copyNotes,
+  onCut: () => {
+    if (!copyNotes()) return false;
+    edit(() => applyOp(deleteRange(store.tune, store.cursor)))();
+    return true;
+  },
+  onPaste: pasteNotes,
+  onSelectAll: () => {
+    const n = tune().events.length;
+    if (n) store.setCursor({ type: 'note', index: n - 1, tone: 0, anchor: 0, staff: staffIdx(store.cursor) });
+  },
+  onDeleteSel: () => edit(() => applyOp((isRange() ? deleteRange : deleteSel)(store.tune, store.cursor)))(),
   onHome: () => store.setCursor({ type: 'caret', index: 0, staff: staffIdx(store.cursor) }),
   onEnd: () => store.setCursor({ type: 'caret', index: tune().events.length, staff: staffIdx(store.cursor) }),
-  onEscape: () => { if (selIndex() >= 0) store.setCursor({ type: 'caret', index: selIndex() + 1, staff: staffIdx(store.cursor) }); },
+  onEscape: () => { if (isRange()) store.setCursor({ type: 'note', index: selIndex(), staff: staffIdx(store.cursor) }); else if (selIndex() >= 0) store.setCursor({ type: 'caret', index: selIndex() + 1, staff: staffIdx(store.cursor) }); },
   onTogglePlay: togglePlay,
   onToggleLoop: () => { loopOn = !loopOn; syncPlay(); },
   cardEl: card,
