@@ -15,7 +15,8 @@
 <div class="app">
   <header class="app-head">
     <div class="brand"><span class="logo"><i role="img" aria-hidden="true"></i></span><span class="brand-name">TuneShare</span></div>
-    <input id="title" class="title-field" maxlength="60" placeholder="Untitled tune" aria-label="Title" autocomplete="off" spellcheck="false">
+    <label class="meta-field"><span class="meta-lbl">Title</span><input id="title" class="title-field" maxlength="60" placeholder="Untitled tune" autocomplete="off" spellcheck="false"></label>
+    <label class="meta-field"><span class="meta-lbl">Arranged by</span><input id="arranger" class="title-field arranger-field" maxlength="60" placeholder="Your name (optional)" autocomplete="off" spellcheck="false"></label>
     <div class="spacer"></div>
     <button class="icon-btn hide-sm" id="undo" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
     <button class="icon-btn hide-sm" id="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>

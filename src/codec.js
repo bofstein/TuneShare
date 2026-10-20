@@ -72,6 +72,7 @@ export function encode(t) {
   if (t.measures !== 4) { tag(6, 0); varint(t.measures); }
   const ins = instrumentIndex(t.instrument);
   if (ins) { tag(11, 0); varint(ins); }
+  if (t.arranger) bytes(12, new TextEncoder().encode(t.arranger));
   // Field 10: the first staff's voice. Field 9: Staff { Clef clef = 1; bytes voice = 4; },
   // present (even if empty) when the tune has a second staff; its voice may copy from the first.
   if (t.events.length) bytes(10, writeVoice(planVoice(t.events, t.key, t.clef)));
@@ -139,6 +140,7 @@ export function decode(fragment) {
         if (chunk.length < len) repaired = true;
         i += len;
         if (field === 1) tune.title = new TextDecoder().decode(new Uint8Array(chunk)).slice(0, 60);
+        else if (field === 12) tune.arranger = new TextDecoder().decode(new Uint8Array(chunk)).slice(0, 60);
         else if (field === 7) eventBytes = chunk;
         else if (field === 8) chordChunks.push(chunk);
         else if (field === 9) staff2Chunk = chunk;

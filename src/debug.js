@@ -14,7 +14,7 @@ const FIELDS = {
 const CHORD_FIELDS = { 1: 'index', 2: 'tones' };
 const STAFF_FIELDS = { 1: 'clef', 2: 'events', 3: 'chord' };
 // v2 links: the note data is one bit-stream "voice" per staff (src/voice.js).
-const FIELDS_V2 = { 1: 'title', 2: 'bpm', 3: 'key', 4: 'clef', 5: 'time', 6: 'measures', 9: 'staff2', 10: 'voice', 11: 'instrument' };
+const FIELDS_V2 = { 1: 'title', 2: 'bpm', 3: 'key', 4: 'clef', 5: 'time', 6: 'measures', 9: 'staff2', 10: 'voice', 11: 'instrument', 12: 'arranger' };
 const STAFF_FIELDS_V2 = { 1: 'clef', 4: 'voice' };
 
 const hex = bytes => bytes.map(b => b.toString(16).padStart(2, '0')).join(' ');

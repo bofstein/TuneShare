@@ -181,3 +181,10 @@ test('instrument: unknown index falls back to the default as a repair', () => {
   assert.equal(r.tune.instrument, undefined);
   assert.equal(r.repaired, true);
 });
+
+test('arranger: absent writes nothing, otherwise round-trips as field 12', () => {
+  assert.equal(decode(encode(tune(ODE))).tune.arranger, undefined);
+  const r = decode(encode(tune(ODE, { measures: 8, arranger: 'Ada Ünïcode' })));
+  assert.equal(r.tune.arranger, 'Ada Ünïcode');
+  assert.equal(r.repaired, false);
+});
