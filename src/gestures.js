@@ -17,6 +17,7 @@ export function initGestures({
   getLay,
   getInputDur,
   onSelect,
+  onExtendTo,
   onEdit,
   onPlaceNote,
   onCommitTune,
@@ -109,6 +110,14 @@ export function initGestures({
     const hit = lay.geo.hitEvent(x, y);
     const tune = getTune(), cursor = getCursor(), sIdx = staffIdx(cursor);
     const sel = selectedEvent(tune, cursor);
+
+    // Shift-click another note on the same staff selects the run of notes in between
+    if (ev.shiftKey && hit && hit.s === sIdx && (cursor.type === 'note' ? hit.ev !== selectedIndex(cursor) : true)) {
+      stopPlayback();
+      onExtendTo(hit.ev);
+      ev.preventDefault();
+      return;
+    }
 
     // Shift-click in selected note's column adds chord tone
     if (ev.shiftKey && sel && !sel.rest && (!hit || hit.s !== sIdx || hit.ev !== selectedIndex(cursor))) {

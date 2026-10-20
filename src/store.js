@@ -40,6 +40,9 @@ export class Store {
     const n = staffEvents(this.tune, staff).length, c = { ...this.cursor, staff };
     this.cursor = c;
     if (c.type === 'note' && (c.index < 0 || c.index >= n)) this.cursor = { type: 'caret', index: n, staff };
+    if (this.cursor.type === 'note' && this.cursor.anchor !== undefined) {
+      this.cursor = { ...this.cursor, anchor: Math.max(0, Math.min(n - 1, this.cursor.anchor)) };
+    }
     if (c.type === 'caret') this.cursor = { type: 'caret', index: Math.max(0, Math.min(n, c.index)), staff };
   }
 

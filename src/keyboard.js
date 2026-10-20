@@ -28,6 +28,11 @@ export function initKeyboard({
   onSetAlter,
   onSwapSel,
   onMoveCursor,
+  onExtendSel,
+  onCopy,
+  onCut,
+  onPaste,
+  onSelectAll,
   onDeleteSel,
   onHome,
   onEnd,
@@ -66,6 +71,10 @@ export function initKeyboard({
       const k = e.key.toLowerCase();
       if (k === 'z' && !e.shiftKey) { onUndo(); e.preventDefault(); }
       else if ((k === 'z' && e.shiftKey) || k === 'y') { onRedo(); e.preventDefault(); }
+      else if (k === 'c' && !e.shiftKey && !e.altKey) { if (onCopy()) e.preventDefault(); }
+      else if (k === 'x' && !e.shiftKey && !e.altKey) { if (onCut()) e.preventDefault(); }
+      else if (k === 'v' && !e.shiftKey && !e.altKey) { if (onPaste()) e.preventDefault(); }
+      else if (k === 'a' && !e.shiftKey && !e.altKey) { onSelectAll(); e.preventDefault(); }
       else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.altKey) {
         const dir = e.key === 'ArrowUp' ? 1 : -1;
         onMovePitch(e.shiftKey ? 7 * dir : dir);
@@ -103,9 +112,9 @@ export function initKeyboard({
     } else if (key === '=' || key === 'n' || key === 'N') {
       onSetAlter(0);
     } else if (key === 'ArrowLeft') {
-      if (e.altKey) onSwapSel(-1); else onMoveCursor(-1);
+      if (e.altKey) onSwapSel(-1); else if (e.shiftKey) onExtendSel(-1); else onMoveCursor(-1);
     } else if (key === 'ArrowRight') {
-      if (e.altKey) onSwapSel(1); else onMoveCursor(1);
+      if (e.altKey) onSwapSel(1); else if (e.shiftKey) onExtendSel(1); else onMoveCursor(1);
     } else if (key === 'Home') {
       onHome();
     } else if (key === 'End') {
