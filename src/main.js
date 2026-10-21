@@ -324,7 +324,7 @@ initKeyboard({
   onDeleteSel: () => edit(() => applyOp((isRange() ? deleteRange : deleteSel)(store.tune, store.cursor)))(),
   onHome: () => store.setCursor({ type: 'caret', index: 0, staff: staffIdx(store.cursor) }),
   onEnd: () => store.setCursor({ type: 'caret', index: tune().events.length, staff: staffIdx(store.cursor) }),
-  onEscape: () => { if (isRange()) store.setCursor({ type: 'note', index: selIndex(), staff: staffIdx(store.cursor) }); else if (selIndex() >= 0) store.setCursor({ type: 'caret', index: selIndex() + 1, staff: staffIdx(store.cursor) }); },
+  onEscape: () => { if (player.playing) { stopPlayback(); return; } if (isRange()) store.setCursor({ type: 'note', index: selIndex(), staff: staffIdx(store.cursor) }); else if (selIndex() >= 0) store.setCursor({ type: 'caret', index: selIndex() + 1, staff: staffIdx(store.cursor) }); },
   onTogglePlay: togglePlay,
   onToggleLoop: () => { loopOn = !loopOn; syncPlay(); },
   cardEl: card,
@@ -386,10 +386,11 @@ function sync() {
 const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>';
 const STOP = '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>';
 function syncPlay() {
-  const b = $('play');
-  b.classList.toggle('playing', player.playing);
-  b.innerHTML = player.playing ? STOP : PLAY;
-  b.setAttribute('aria-label', player.playing ? 'Stop (Space)' : 'Play (Space)');
+  for (const b of [$('play'), $('playPin')]) {
+    b.classList.toggle('playing', player.playing);
+    b.innerHTML = player.playing ? STOP : PLAY;
+    b.setAttribute('aria-label', player.playing ? 'Stop (Space)' : 'Play (Space)');
+  }
   $('loop').classList.toggle('on', loopOn);
   $('loop').setAttribute('aria-pressed', loopOn);
   $('preview').classList.toggle('on', previewOn);
@@ -411,6 +412,7 @@ $('noteBar').addEventListener('click', () => card.focus({ preventScroll: true })
 
 const setField = patch => { stopPlayback(); apply({ tune: { ...tune(), ...patch } }); };
 $('play').onclick = togglePlay;
+$('playPin').onclick = togglePlay;
 $('loop').onclick = () => { loopOn = !loopOn; syncPlay(); };
 $('preview').onclick = () => { previewOn = !previewOn; syncPlay(); };
 $('key').innerHTML = KEY_NAMES.map((_, i) => `<option value="${i - 7}">${keyLabel(i - 7)}</option>`).join('');
