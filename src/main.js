@@ -161,11 +161,24 @@ function paintStaff({ open, systems }) {
   shown = { open, systems };
 }
 
+// While printing, the staff is laid out at a fixed width and each system gets its own <svg>, so
+// the browser can break pages between systems and never through one.
+let printing = false;
+function paintPrint({ open, systems }) {
+  const { sysH } = lay.geo, h = lay.height;
+  host.innerHTML = systems.map((markup, k) => {
+    const y = k * sysH, vh = Math.min(sysH, h - y);
+    return `<div class="print-sys">${open.replace(/viewBox="[^"]*" width="[^"]*" height="[^"]*"/, `viewBox="0 ${y} ${lay.width} ${vh}" width="${lay.width}" height="${vh}"`)}${markup}</svg></div>`;
+  }).join('');
+  shown = null;
+}
+
 function render() {
-  const w = Math.max(280, host.clientWidth);
+  const w = printing ? 860 : Math.max(280, host.clientWidth);
   const perSys = w >= 860 ? 4 : w >= 560 ? 3 : 2;
   const sp = w >= 560 ? 10 : 8;
   lay = layout(store.tune, { width: w, perSys, sp });
+  if (printing) { paintPrint(renderSystems(lay)); sync(); return; }
   paintStaff(renderSystems(lay));
   paintClasses();
   paintOverlay();
@@ -378,6 +391,9 @@ function sync() {
   $('mUp').disabled = t.measures >= M.MAX_MEASURES;
   $('mDown').disabled = t.measures <= 1;
   $('settingsSummary').innerHTML = formatSettingsSummary(store.tune);
+  $('printTitle').textContent = t.title;
+  $('printArranger').textContent = t.arranger ? `Arranged by ${t.arranger}` : '';
+  $('printHead').hidden = !t.title && !t.arranger;
   document.title = t.title ? `${t.title} — TuneShare` : 'TuneShare';
   card.setAttribute('aria-label', formatAriaLabel(store.tune, store.cursor));
   syncPlay();
@@ -572,6 +588,14 @@ addEventListener('hashchange', () => {
 
 let resizeRaf = 0;
 addEventListener('resize', () => { cancelAnimationFrame(resizeRaf); resizeRaf = requestAnimationFrame(render); });
+
+function setPrinting(on) {
+  if (printing === on) return;
+  printing = on;
+  render();
+}
+addEventListener('beforeprint', () => setPrinting(true));
+addEventListener('afterprint', () => setPrinting(false));
 
 // ---------- start ----------
 document.fonts.ready.then(render);

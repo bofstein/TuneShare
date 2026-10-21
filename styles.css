@@ -251,3 +251,29 @@ svg.staff { display: block; overflow: visible; }
   .note-bar { flex-direction: column; align-items: stretch; }
   .readout { justify-content: flex-end; }
 }
+
+/* ---------- print: just the sheet music, always on white ---------- */
+.print-head { display: none; }
+@media print {
+  @page { margin: 14mm; }
+  :root, :root[data-theme="dark"] {
+    --page: #fff; --surface: #fff; --ink: #000; --ink-3: #555;
+    --staff: #000; --staff-faint: #999; --staff-line: #000;
+    color-scheme: light;
+  }
+  body { background: #fff; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .app { display: block; min-height: 0; padding: 0; }
+  .app-head, .tune-bar, .note-bar, .hint, .site-foot, .empty-hint, .toast-region, .scrim, .sr-only { display: none !important; }
+  .print-head:not([hidden]) { display: block; text-align: center; margin: 0 0 14px; }
+  .print-head h1 { margin: 0; font: 600 26px/1.2 Georgia, "Times New Roman", serif; }
+  .print-head p { margin: 4px 0 0; font: italic 14px/1.3 Georgia, "Times New Roman", serif; color: #333; }
+  .print-head p:empty { display: none; }
+  .staff-card, .staff-card:focus-visible { margin: 0; padding: 0; border: none; border-radius: 0; box-shadow: none; background: none; }
+  .print-sys { break-inside: avoid; page-break-inside: avoid; }
+  svg.staff { width: 100%; height: auto; }
+  /* no selection, playback or editing colours on paper */
+  .staff .sel text, .staff .sel .ink, .staff .play text, .staff .play .ink { fill: var(--staff); }
+  .staff .sel .stem, .staff .sel .ledger, .staff .play .stem, .staff .play .ledger { stroke: var(--staff); }
+  .staff .halo, .staff .overlay { display: none; }
+  .staff text.mnum { fill: #555; }
+}
