@@ -751,7 +751,50 @@ export function ensure() {
   return ctx;
 }
 
-export const HD_SAMPLE_GAIN_BOOST = 1.25;
+// HD samples are loudness-matched to the synthesized voice of the same instrument, so turning
+// HD on changes the timbre, not the volume. Targets are the mean BS.1770 loudness (LUFS, before
+// the master bus) of each synth voice over a 1s note at C3..C6; re-measure if a voice changes.
+export const HD_LOUDNESS_TARGET = {
+  piano: -6.5, epiano: -5.2, guitar: -9.5, eguitar: -4.9, violin: -0.1, cello: -0.1,
+  trumpet: -0.8, flute: -0.6, sax: -0.2, choir: -6.7, synth: -1.1,
+};
+
+/** BS.1770 K-weighted loudness (LUFS) of the first `win` seconds; mono counts as both speakers. */
+export function kLoudness(channels, sr, win = 1.0) {
+  const n = Math.min(channels[0].length, Math.floor(win * sr));
+  if (!n) return -Infinity;
+  const biquad = (b0, b1, b2, a1, a2) => [b0, b1, b2, a1, a2];
+  let K = Math.tan(Math.PI * 1681.9744509555319 / sr), Q = 0.7071752369554193;
+  const Vh = 10 ** (3.99984385397 / 20), Vb = Vh ** 0.4996667741545416;
+  let a0 = 1 + K / Q + K * K;
+  const shelf = biquad((Vh + Vb * K / Q + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0,
+    2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0);
+  K = Math.tan(Math.PI * 38.13547087613982 / sr); Q = 0.5003270373253953; a0 = 1 + K / Q + K * K;
+  const hp = biquad(1, -2, 1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0);
+  let power = 0;
+  for (const ch of channels) {
+    let s1 = [0, 0, 0, 0], s2 = [0, 0, 0, 0], e = 0;
+    for (let i = 0; i < n; i++) {
+      const x = ch[i];
+      const y = shelf[0] * x + shelf[1] * s1[0] + shelf[2] * s1[1] - shelf[3] * s1[2] - shelf[4] * s1[3];
+      s1 = [x, s1[0], y, s1[2]];
+      const z = hp[0] * y + hp[1] * s2[0] + hp[2] * s2[1] - hp[3] * s2[2] - hp[4] * s2[3];
+      s2 = [y, s2[0], z, s2[2]];
+      e += z * z;
+    }
+    power += e / n;
+  }
+  return -0.691 + 10 * Math.log10(power * 2 / channels.length);
+}
+
+/** Gain that brings a decoded sample to its instrument's synth loudness, clamped to -24..+36 dB.
+ * The FluidR3 mp3s peak near 0.1 (about -20 dB), so most notes need +20..+32 dB. */
+export function sampleNormGain(inst, channels, sr) {
+  const target = HD_LOUDNESS_TARGET[inst] ?? HD_LOUDNESS_TARGET.piano;
+  const L = kLoudness(channels, sr);
+  if (!(L > -70)) return 1; // silent or broken file: leave it alone
+  return Math.min(64, Math.max(1 / 16, 10 ** ((target - L) / 20)));
+}
 
 // ---------- HD Audio Sample Engine (On-demand CDN streaming + persistent CacheStorage) ----------
 export const SAMPLE_FOLDERS = {
@@ -861,21 +904,10 @@ export async function loadSample(inst, midi) {
       if (!resp || !resp.ok) return null;
       const arrayBuf = await resp.arrayBuffer();
       const audioBuf = await ctx.decodeAudioData(arrayBuf);
-      let peak = 0;
-      for (let ch = 0; ch < audioBuf.numberOfChannels; ch++) {
-        const data = audioBuf.getChannelData(ch);
-        for (let i = 0; i < data.length; i++) {
-          const a = Math.abs(data[i]);
-          if (a > peak) peak = a;
-        }
-      }
-      if (peak > 0.02) {
-        const scale = Math.min(3.8, 0.96 / peak);
-        for (let ch = 0; ch < audioBuf.numberOfChannels; ch++) {
-          const data = audioBuf.getChannelData(ch);
-          for (let i = 0; i < data.length; i++) data[i] *= scale;
-        }
-      }
+      const chans = [];
+      for (let ch = 0; ch < audioBuf.numberOfChannels; ch++) chans.push(audioBuf.getChannelData(ch));
+      const scale = sampleNormGain(inst, chans, audioBuf.sampleRate);
+      for (const data of chans) for (let i = 0; i < data.length; i++) data[i] *= scale;
       const isSus = SUSTAINED.has(inst);
       const entry = {
         buf: audioBuf,
@@ -1011,7 +1043,7 @@ function addDamperThump(midi, time, level) {
 /** Schedule one cached note with smooth attack and click-free release shaping; returns a handle that can be cut short. */
 function voice(midi, start, dur, level = 1, phraseStart = true) {
   const entry = getNoteBuffer(instrument, midi);
-  const effLevel = (entry.isSample ? HD_SAMPLE_GAIN_BOOST : 1.0) * level;
+  const effLevel = level;
   const bowed = instrument === 'violin' || instrument === 'cello';
   const end = start + Math.max(dur, 0.06);
   const atk = Math.min(entry.sustained ? (instrument === 'choir' ? 0.025 : bowed && !phraseStart ? 0.022 : 0.010) : 0.003, dur * 0.35);

@@ -6,7 +6,7 @@ import {
   harmonicAmps, synthesizeNote, phraseSustainTicks, setCustomProfile, Player,
   sampleNoteName, sampleUrl, isHdSamplesEnabled, setHdSamplesEnabled, clearSampleCache,
   tunePlaybackOrder, warmTune, ensure, onSampleProgress, getSampleLoadingProgress,
-  HD_SAMPLE_GAIN_BOOST,
+  HD_LOUDNESS_TARGET, kLoudness, sampleNormGain,
 } from '../src/audio.js';
 import { tune, parse } from './helpers.js';
 
@@ -277,8 +277,17 @@ test('getSampleLoadingProgress calculates note cache completion and onSampleProg
   assert.equal(received.length, countBefore);
 });
 
-test('HD_SAMPLE_GAIN_BOOST provides +25% gain compensation for acoustic samples', () => {
-  assert.equal(HD_SAMPLE_GAIN_BOOST, 1.25);
+test('HD samples are loudness-matched to each instrument synth voice', () => {
+  for (const { id } of INSTRUMENTS) assert.ok(Number.isFinite(HD_LOUDNESS_TARGET[id]), id);
+  // A full-scale 1 kHz sine in both speakers reads about 0 LUFS (K-weighting adds ~0.7 dB at 1 kHz)
+  const sr = 48000, sine = new Float32Array(sr).map((_, i) => Math.sin(2 * Math.PI * 1000 * i / sr));
+  assert.ok(Math.abs(kLoudness([sine, sine], sr) - kLoudness([sine], sr)) < 1e-9);
+  assert.ok(Math.abs(kLoudness([sine], sr)) < 0.3, String(kLoudness([sine], sr)));
+  // A quiet sample is boosted onto the target; silence is left alone
+  const quiet = sine.map(v => v * 0.1);
+  const g = sampleNormGain('violin', [quiet], sr);
+  assert.ok(Math.abs(kLoudness([quiet.map(v => v * g)], sr) - HD_LOUDNESS_TARGET.violin) < 0.01);
+  assert.equal(sampleNormGain('violin', [new Float32Array(sr)], sr), 1);
 });
 
 test('default piano model uses Kawai RX/GX Warm Grand voicing', () => {
