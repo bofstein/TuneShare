@@ -76,6 +76,7 @@ button:disabled { cursor: default; }
 .transport { display: flex; align-items: center; gap: 4px; }
 .play-btn { width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--ink); color: var(--surface); display: grid; place-items: center; margin-right: 4px; }
 .play-btn svg { fill: currentColor !important; stroke: none !important; }
+.pin-play { width: 36px; height: 36px; margin: 0 6px 0 0; }
 .play-btn.playing { background: var(--play); color: #fff; }
 .settings { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; }
 .settings-toggle { display: none; }
@@ -222,7 +223,8 @@ svg.staff { display: block; overflow: visible; }
   .title-field { margin: 0; width: 100%; }
   #copy .copy-label { font-size: 0; }
   #copy .copy-label::after { content: "Share"; font-size: 13.5px; }
-  .tune-bar { padding: 8px 12px; gap: 8px; flex-wrap: nowrap; }
+  .pin-play { display: none; }
+  .tune-bar { position: sticky; top: 0; z-index: 11; padding: 8px 12px; gap: 8px; flex-wrap: nowrap; }
   .tune-bar.open { flex-wrap: wrap; }
   .play-btn { width: 44px; height: 44px; }
   .transport .icon-btn { display: none; }
