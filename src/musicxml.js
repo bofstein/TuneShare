@@ -3,11 +3,13 @@
 import { LETTERS, keyAlter } from './theory.js';
 import { pitchesOf, staffList } from './model.js';
 import { buildPieces } from './layout.js';
+import { INSTRUMENTS, DEFAULT_INSTRUMENT, instrumentIndex } from './instruments.js';
 
-const DIV = 4;                                               // divisions per quarter = ticks per quarter
-const TYPE = { 16: ['whole', 0], 12: ['half', 1], 8: ['half', 0], 6: ['quarter', 1], 4: ['quarter', 0], 3: ['eighth', 1], 2: ['eighth', 0], 1: ['16th', 0] };
+// DIV, TYPE and CLEF are shared with the importer (musicxml-import.js), so the two stay in step.
+export const DIV = 4;                                               // divisions per quarter = ticks per quarter
+export const TYPE = { 16: ['whole', 0], 12: ['half', 1], 8: ['half', 0], 6: ['quarter', 1], 4: ['quarter', 0], 3: ['eighth', 1], 2: ['eighth', 0], 1: ['16th', 0] };
 const ACC = { '-1': 'flat', 0: 'natural', 1: 'sharp' };
-const CLEF = { treble: ['G', 2], bass: ['F', 4] };
+export const CLEF = { treble: ['G', 2], bass: ['F', 4] };
 
 export const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -48,6 +50,7 @@ export function toMusicXML(tune) {
   const [beats, beatType] = tune.time.split('/');
   const perStaff = staves.map(s => staffMeasures(tune, s));
   const tpm = perStaff[0][0].reduce((a, p) => a + p.ticks, 0);
+  const inst = INSTRUMENTS[instrumentIndex(tune.instrument || DEFAULT_INSTRUMENT)];
   const out = [];
   for (let m = 0; m < tune.measures; m++) {
     const x = [`<measure number="${m + 1}">`];
@@ -79,7 +82,7 @@ export function toMusicXML(tune) {
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="4.0">
 ${tune.title ? `<work><work-title>${esc(tune.title)}</work-title></work>\n` : ''}<identification>${tune.arranger ? `<creator type="arranger">${esc(tune.arranger)}</creator>` : ''}<encoding><software>TuneShare</software></encoding></identification>
-<part-list><score-part id="P1"><part-name>Music</part-name></score-part></part-list>
+<part-list><score-part id="P1"><part-name>${esc(inst.name)}</part-name><score-instrument id="P1-I1"><instrument-name>${esc(inst.name)}</instrument-name></score-instrument><midi-instrument id="P1-I1"><midi-program>${inst.gm + 1}</midi-program></midi-instrument></score-part></part-list>
 <part id="P1">
 ${out.join('\n')}
 </part>

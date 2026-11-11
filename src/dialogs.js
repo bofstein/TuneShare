@@ -96,3 +96,51 @@ export function initDebugModal({ debugEl, dumpEl, closeBtn, copyBtn, cardEl, get
   };
   return { openDebug, closeDebug, toggleDebug, paintDebug, isOpen: () => !debugEl.hidden };
 }
+
+/**
+ * MusicXML import: pick a file, show what will be kept, changed and lost, then replace the tune.
+ * The importer is loaded only when a file is chosen.
+ */
+export function initImport({ openBtn, fileInput, sheetEl, els, cardEl, onImport, toast }) {
+  let pending = null;
+  const close = () => { sheetEl.hidden = true; pending = null; cardEl.focus({ preventScroll: true }); };
+  openBtn.onclick = () => { fileInput.value = ''; fileInput.click(); };
+  fileInput.onchange = async () => {
+    const file = fileInput.files?.[0];
+    if (file) await openFile(file);
+  };
+  async function openFile(file) {
+    const mod = await import('./musicxml-import.js');
+    let r;
+    try { r = mod.fromMusicXML(await mod.readMusicXmlFile(await file.arrayBuffer())); } catch (e) { r = { error: e.message || "This file couldn't be read." }; }
+    if (r.error) { toast({ kind: 'warn', title: `Can't import ${file.name}`, body: r.error, ms: 12000 }); return; }
+    pending = r;
+    const t = r.tune, name = t.title || file.name;
+    els.title.textContent = `Import “${name}”?`;
+    els.replace.textContent = 'This replaces the tune you have open now. You can undo it with Ctrl+Z.';
+    const staves = t.staff2 ? `2 staves (${r.staffLabels.join(' and ')})` : `1 staff (${r.staffLabels[0]})`;
+    els.summary.textContent = `${t.measures} measure${t.measures > 1 ? 's' : ''} in ${t.time}, ${staves}, ${mod.instrumentLabel(t.instrument || 'piano')}.`;
+    const section = (head, items) => (items.length ? `<h3>${head}</h3><ul>${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '');
+    const lost = r.lost.map(l => (l.count > 1 ? `${cap(l.what)} (${l.count})` : cap(l.what)));
+    els.details.innerHTML = section('Changed to fit TuneShare', mod.describeImport(r))
+      + (lost.length ? section("Won't be imported", lost)
+        : `<p>Nothing in this file is left out. TuneShare doesn't keep things like ${mod.COMMON_LOSSES.join(', ')}, and this file has none of them.</p>`);
+    sheetEl.hidden = false;
+    els.ok.focus();
+  }
+  els.cancel.onclick = close;
+  sheetEl.onclick = e => { if (e.target === sheetEl) close(); };
+  sheetEl.onkeydown = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  els.ok.onclick = () => {
+    const r = pending;
+    close();
+    if (!r) return;
+    onImport(r.tune);
+    if (r.truncated) toast({ kind: 'warn', title: `Cut to ${r.tune.measures} measures`, body: `The score has ${r.truncated} measures, more than TuneShare holds. The rest was left out.`, ms: 8000 });
+    else toast({ title: 'Imported', body: 'Press Ctrl+Z to go back to your previous tune.', ms: 4000 });
+  };
+  return { openFile, isOpen: () => !sheetEl.hidden };
+}
+
+const cap = s => s[0].toUpperCase() + s.slice(1);
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
