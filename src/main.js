@@ -51,7 +51,7 @@ import {
 } from './editor.js';
 import { formatAriaLabel, formatHdStatus, formatHint, formatReadout, formatSettingsSummary } from './ui-format.js';
 import { ERRORS, setToastContainer, showError, toast, warnFull } from './toast.js';
-import { copyLink, exportMp3, exportMusicXml, initDebugModal, initNewPopover, initShortcutSheet } from './dialogs.js';
+import { copyLink, exportMp3, exportMusicXml, initDebugModal, initNewPopover, initShortcutSheet, initImport } from './dialogs.js';
 import { initGestures } from './gestures.js';
 import { initKeyboard } from './keyboard.js';
 
@@ -226,6 +226,17 @@ initNewPopover({
 $('copy').onclick = () => copyLink({ getTune: () => store.tune, onFlushUrl: () => store.flushUrl(), toast });
 $('exportXml').onclick = () => exportMusicXml(store.tune);
 $('exportMp3').onclick = () => exportMp3(store.tune, { toast });
+const importer = initImport({
+  openBtn: $('importXml'), fileInput: $('importFile'), sheetEl: $('importSheet'), cardEl: card, toast,
+  els: { title: $('importTitle'), replace: $('importReplace'), summary: $('importSummary'), details: $('importDetails'), ok: $('importOk'), cancel: $('importCancel') },
+  onImport: t => { stopPlayback(); store.commit(t, { type: 'caret', index: 0, staff: 0 }); },
+});
+// Dropping a MusicXML file anywhere on the page opens it too.
+document.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+document.addEventListener('drop', e => {
+  const f = e.dataTransfer?.files?.[0];
+  if (f && /\.(musicxml|xml|mxl)$/i.test(f.name)) { e.preventDefault(); importer.openFile(f); }
+});
 $('theme').onclick = toggleTheme;
 
 // ---------- gestures & pointer ----------
@@ -283,7 +294,7 @@ function pasteNotes() {
 // ---------- keyboard ----------
 initKeyboard({
   onDebug: debug.toggleDebug,
-  isDebugOpen: debug.isOpen,
+  isDebugOpen: () => debug.isOpen() || importer.isOpen(),   // the import dialog blocks editing keys too
   closeDebug: debug.closeDebug,
   isSheetOpen: sheet.isOpen,
   closeSheet: sheet.closeSheet,

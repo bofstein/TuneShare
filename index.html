@@ -28,6 +28,8 @@
         <div class="pop-actions"><button class="btn" id="newCancel">Cancel</button><button class="btn primary" id="newOk">Start new</button></div>
       </div>
     </div>
+    <button class="btn" id="importXml" title="Open a MusicXML file (.musicxml, .xml, .mxl)" aria-label="Open MusicXML"><svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 21h14"/></svg><span class="hide-sm">Open</span></button>
+    <input type="file" id="importFile" accept=".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml" hidden>
     <button class="btn" id="exportXml" title="Download MusicXML (opens in MuseScore and similar)" aria-label="Download MusicXML"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg><span class="hide-sm">MusicXML</span></button>
     <button class="btn" id="exportMp3" title="Download MP3 (sounds like Play, with the current instrument and HD setting)" aria-label="Download MP3"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span class="hide-sm">MP3</span></button>
     <button class="btn primary" id="copy"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span class="copy-label">Copy link</span></button>
@@ -144,6 +146,16 @@
         <div class="krow"><span>Loop</span><span class="keys"><kbd>L</kbd></span></div>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="scrim" id="importSheet" hidden>
+  <div class="sheet import-sheet" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <div class="sheet-head"><h2 id="importTitle">Import MusicXML</h2></div>
+    <p class="import-warn" id="importReplace"></p>
+    <p class="import-summary" id="importSummary"></p>
+    <div id="importDetails"></div>
+    <div class="pop-actions"><button class="btn" id="importCancel">Cancel</button><button class="btn primary" id="importOk">Import and replace</button></div>
   </div>
 </div>
 
