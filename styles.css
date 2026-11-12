@@ -205,6 +205,11 @@ svg.staff { display: block; overflow: visible; }
 .sheet .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 36px; }
 .sheet h3 { margin: 12px 0 4px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
 .debug-sheet { width: min(900px, 100%); }
+.import-sheet { width: min(560px, 100%); }
+.import-sheet p { margin: 0 0 10px; font-size: 14px; color: var(--ink-2); }
+.import-sheet .import-warn { color: var(--ink); font-weight: 600; }
+.import-sheet ul { margin: 2px 0 12px; padding-left: 20px; font-size: 13.5px; color: var(--ink-2); }
+.import-sheet li { margin: 2px 0; }
 .debug-sheet .btn { height: 30px; margin-right: 6px; }
 .debug-dump { margin: 0; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
 .krow { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 13px; }

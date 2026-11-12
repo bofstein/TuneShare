@@ -333,3 +333,11 @@ tests/                     unit tests for codec, voice, debug, model, layout, ed
   request.
 - **Deployment:** GitHub Pages serves `main` from the repository root. The
   `.nojekyll` file stops Pages from running Jekyll.
+
+## MusicXML import
+
+"Open" reads `.musicxml`, `.xml` and compressed `.mxl` (src/musicxml-import.js, with a small pure-JS XML reader in src/xml.js so tests run in node). It imports only what the tune model holds: the first two staves (across parts), one voice per staff (other voices that line up become chord notes), up to 5 notes per chord (the top 5), key, time, clefs, tempo, title, arranger and instrument (General MIDI program, or a guess from the part name). Everything else is counted and listed in a confirm dialog before the current tune is replaced (undo brings it back).
+
+Best-effort fits: time signatures with the same bar length or a whole multiple (2/2 → 4/4, 12/8 → 6/8) are re-written, other clefs become treble or bass by where the notes sit, double sharps/flats are respelled, tuplets round to 16ths, tied notes merge when the total is a length TuneShare has. Scores past MAX_MEASURES are cut with a warning. Unsupported time signatures, percussion staves and unreadable files are refused with a message that names the part and measure.
+
+Keeping it in step: the exporter's TYPE/CLEF/DIV tables and the instrument `gm` numbers are shared, and tests/musicxml-import.test.js round-trips random tunes through export → import. When the model gains a feature (say slurs), export it, read it in the importer, and remove it from the LOST table.
