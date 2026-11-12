@@ -719,6 +719,31 @@ export function synthesizeNote(inst, midi, sr = SYNTH_SR) {
 let ctx = null, master = null;
 const noteCache = new Map();
 
+/** The shared output chain (master gain, short reverb, gentle compressor) on any audio context; returns its input. */
+function buildBus(c) {
+  const comp = c.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.knee.value = 18; comp.ratio.value = 3;
+  comp.connect(c.destination);
+  const master = c.createGain(); master.gain.value = 0.34;
+  const dry = c.createGain(); dry.gain.value = 0.88;
+  const wet = c.createGain(); wet.gain.value = 0.15;
+  const conv = c.createConvolver();
+  const irLen = Math.floor(c.sampleRate * 0.85), ir = c.createBuffer(2, irLen, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    let seed = 10007 + ch * 9973, lp = 0;
+    for (let i = 0; i < irLen; i++) {
+      seed = (seed * 16807) % 2147483647;
+      lp = 0.72 * lp + 0.28 * (seed / 1073741824 - 1);
+      d[i] = (i < c.sampleRate * 0.012 ? i / (c.sampleRate * 0.012) : 1) * Math.exp(-i / (c.sampleRate * 0.22)) * lp;
+    }
+  }
+  conv.buffer = ir;
+  master.connect(dry); dry.connect(comp);
+  master.connect(conv); conv.connect(wet); wet.connect(comp);
+  return master;
+}
+
 export function ensure() {
   if (typeof window === 'undefined') return null;
   const AC = window.AudioContext || window.webkitAudioContext;
@@ -726,26 +751,7 @@ export function ensure() {
   if (!ctx) {
     ctx = new AC();
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
-    const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14; comp.knee.value = 18; comp.ratio.value = 3;
-    comp.connect(ctx.destination);
-    master = ctx.createGain(); master.gain.value = 0.34;
-    const dry = ctx.createGain(); dry.gain.value = 0.88;
-    const wet = ctx.createGain(); wet.gain.value = 0.15;
-    const conv = ctx.createConvolver();
-    const irLen = Math.floor(ctx.sampleRate * 0.85), ir = ctx.createBuffer(2, irLen, ctx.sampleRate);
-    for (let ch = 0; ch < 2; ch++) {
-      const d = ir.getChannelData(ch);
-      let seed = 10007 + ch * 9973, lp = 0;
-      for (let i = 0; i < irLen; i++) {
-        seed = (seed * 16807) % 2147483647;
-        lp = 0.72 * lp + 0.28 * (seed / 1073741824 - 1);
-        d[i] = (i < ctx.sampleRate * 0.012 ? i / (ctx.sampleRate * 0.012) : 1) * Math.exp(-i / (ctx.sampleRate * 0.22)) * lp;
-      }
-    }
-    conv.buffer = ir;
-    master.connect(dry); dry.connect(comp);
-    master.connect(conv); conv.connect(wet); wet.connect(comp);
+    master = buildBus(ctx);
   }
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   return ctx;
@@ -944,7 +950,9 @@ function getNoteBuffer(inst, midi) {
   if (noteCache.has(key)) return noteCache.get(key);
   if (noteCache.size > 160) noteCache.delete(noteCache.keys().next().value);
   const spec = synthesizeNote(inst, midi, SYNTH_SR);
-  const buf = ctx.createBuffer(1, spec.data.length, SYNTH_SR);
+  const buf = typeof AudioBuffer === 'function'
+    ? new AudioBuffer({ numberOfChannels: 1, length: spec.data.length, sampleRate: SYNTH_SR })
+    : ctx.createBuffer(1, spec.data.length, SYNTH_SR);
   buf.getChannelData(0).set(spec.data);
   const entry = { buf, loopStart: spec.loopStart, loopEnd: spec.loopEnd, sustained: spec.sustained };
   noteCache.set(key, entry);
@@ -1024,7 +1032,8 @@ export function warmTune(tune) {
   if (queue.length) warmTimer = setTimeout(step, 0);
 }
 
-function addDamperThump(midi, time, level) {
+function addDamperThump(midi, time, level, out = { ctx, master }) {
+  const { ctx, master } = out;
   if (!ctx || level <= 0.04 || midi > 84) return;
   try {
     const f0 = freqOf(midi);
@@ -1041,7 +1050,8 @@ function addDamperThump(midi, time, level) {
 }
 
 /** Schedule one cached note with smooth attack and click-free release shaping; returns a handle that can be cut short. */
-function voice(midi, start, dur, level = 1, phraseStart = true) {
+function voice(midi, start, dur, level = 1, phraseStart = true, out = { ctx, master }) {
+  const { ctx, master } = out;
   const entry = getNoteBuffer(instrument, midi);
   const effLevel = level;
   const bowed = instrument === 'violin' || instrument === 'cello';
@@ -1069,7 +1079,7 @@ function voice(midi, start, dur, level = 1, phraseStart = true) {
   env.gain.linearRampToValueAtTime(0, end + release);
   env.connect(master);
   if ((instrument === 'piano' || instrument === 'epiano') && midi <= 84) {
-    addDamperThump(midi, end, effLevel);
+    addDamperThump(midi, end, effLevel, out);
   }
   const src = ctx.createBufferSource();
   src.buffer = entry.buf;
@@ -1183,6 +1193,36 @@ function createTicker(intervalMs, onTick) {
   };
 }
 
+/**
+ * The notes one playback pass sounds, shared by live playback and file export so both play the same thing.
+ * Pushes {midi, t0, dur, level, phraseStart} onto `pending` and highlight spans onto `schedule` (optional).
+ */
+function collectNotes(tune, staves, startTime, fromTick, secPerTick, mt, pending, schedule = null) {
+  staves.forEach((st, s) => {
+    let t = 0;
+    st.events.forEach((e, i) => {
+      const len = ticksOf(e);
+      if (t >= fromTick && !e.rest) {
+        const prev = i > 0 ? st.events[i - 1] : null;
+        const ps = pitchesOf(e), prevPs = prev && !prev.rest ? pitchesOf(prev) : null;
+        // A fresh bow "grab" occurs at the start of a phrase (after a rest, at bar 0, or on a repeated bow stroke)
+        const phraseStart = !prev || prev.rest || ps.some(p => prevPs.some(q => midiOf(p) === midiOf(q)));
+        const t0 = startTime + (t - fromTick) * secPerTick, d = len * secPerTick;
+        const ringDur = phraseSustainTicks(st.events, i, t, mt, tune.instrument || instrument) * secPerTick;
+        const level = chordLevel(ps.length);
+        ps.forEach(p => pending.push({ midi: midiOf(p), t0, dur: ringDur, level, phraseStart }));
+        schedule?.push({ key: `${s}:${i}`, t0, t1: t0 + d });
+      } else if (t >= fromTick) {
+        const t0 = startTime + (t - fromTick) * secPerTick, d = len * secPerTick;
+        schedule?.push({ key: `${s}:${i}`, t0, t1: t0 + d });
+      }
+      t += len;
+    });
+  });
+}
+
+const METER_TICKS = { '2/4': 8, '3/4': 12, '4/4': 16, '6/8': 12 };
+
 export class Player {
   constructor() {
     this.playing = false;
@@ -1212,7 +1252,7 @@ export class Player {
     const c = ensure();
     warmTune(tune);
     const secPerTick = 60 / tune.bpm / 4;
-    const mt = { '2/4': 8, '3/4': 12, '4/4': 16, '6/8': 12 }[tune.time];
+    const mt = METER_TICKS[tune.time];
     const staves = staffList(tune);
     const contentEnd = Math.max(...staves.map(st => used(st.events)));
     if (!contentEnd || from >= contentEnd) { onEnd(); return; }
@@ -1220,27 +1260,7 @@ export class Player {
     this.playing = true;
     const schedule = [], pending = [];
     const pass = (startTime, fromTick) => {
-      staves.forEach((st, s) => {
-        let t = 0;
-        st.events.forEach((e, i) => {
-          const len = ticksOf(e);
-          if (t >= fromTick && !e.rest) {
-            const prev = i > 0 ? st.events[i - 1] : null;
-            const ps = pitchesOf(e), prevPs = prev && !prev.rest ? pitchesOf(prev) : null;
-            // A fresh bow "grab" occurs at the start of a phrase (after a rest, at bar 0, or on a repeated bow stroke)
-            const phraseStart = !prev || prev.rest || ps.some(p => prevPs.some(q => midiOf(p) === midiOf(q)));
-            const t0 = startTime + (t - fromTick) * secPerTick, d = len * secPerTick;
-            const ringDur = phraseSustainTicks(st.events, i, t, mt, tune.instrument || instrument) * secPerTick;
-            const level = chordLevel(ps.length);
-            ps.forEach(p => pending.push({ midi: midiOf(p), t0, dur: ringDur, level, phraseStart }));
-            schedule.push({ key: `${s}:${i}`, t0, t1: t0 + d });
-          } else if (t >= fromTick) {
-            const t0 = startTime + (t - fromTick) * secPerTick, d = len * secPerTick;
-            schedule.push({ key: `${s}:${i}`, t0, t1: t0 + d });
-          }
-          t += len;
-        });
-      });
+      collectNotes(tune, staves, startTime, fromTick, secPerTick, mt, pending, schedule);
       pending.sort((a, b) => a.t0 - b.t0);
       schedule.sort((x, y) => x.t1 - y.t1);
       return startTime + (fromTick === 0 ? loopTicks : contentEnd - fromTick) * secPerTick;
@@ -1317,4 +1337,75 @@ export class Player {
     if (ctx) { const now = ctx.currentTime; this.voices.forEach(v => v.h?.cut(now)); }
     this.voices = [];
   }
+}
+
+// ---------- Offline rendering (audio file export) ----------
+// Export goes through the same note list (collectNotes), voices (voice) and output chain (buildBus)
+// as live playback, so the file sounds like pressing Play. Only the audio context differs.
+
+const EXPORT_LEAD = 0.05;   // live playback starts 50ms after Play; keep the same offset
+const EXPORT_TAIL = 1.5;    // longest release (0.26s) + reverb (0.85s) + compressor recovery
+
+/** Every note the tune plays once through, with absolute times in seconds, plus the length to render. */
+export function tuneNotes(tune) {
+  const secPerTick = 60 / tune.bpm / 4;
+  const mt = METER_TICKS[tune.time];
+  const staves = staffList(tune);
+  const notes = [];
+  collectNotes(tune, staves, EXPORT_LEAD, 0, secPerTick, mt, notes);
+  notes.sort((a, b) => a.t0 - b.t0);
+  const contentEnd = Math.max(0, ...staves.map(st => used(st.events)));
+  const barEnd = EXPORT_LEAD + Math.ceil(contentEnd / mt) * mt * secPerTick;
+  const ringEnd = notes.reduce((m, n) => Math.max(m, n.t0 + n.dur), 0);
+  return { notes, duration: notes.length ? Math.max(barEnd, ringEnd + EXPORT_TAIL) : 0 };
+}
+
+/**
+ * Make sure every sound the tune needs is ready before an offline render. In HD mode this waits for
+ * the samples (live playback would otherwise fall back to the synth only until they arrive).
+ * Returns how many HD samples could not be loaded (those notes use the synth voice, as live playback does).
+ */
+export async function prepareRender(tune, onProgress = () => {}) {
+  const inst = instrument;
+  const midis = tunePlaybackOrder(tune);
+  let missing = 0;
+  if (hdSamplesEnabled) {
+    ensure();
+    let done = 0;
+    await Promise.all(midis.map(m => loadSample(inst, m).then(e => {
+      if (!e) missing++;
+      onProgress(++done / midis.length);
+    })));
+  }
+  for (const m of midis) getNoteBuffer(inst, m);
+  return { missing };
+}
+
+/**
+ * Render seconds [from, to) of the tune into a new AudioBuffer. To keep chunk seams clean, rendering starts
+ * early enough (`preroll`) that notes still ringing at `from`, the reverb and the compressor are already in
+ * the state they would be in a single long render; that lead-in is cut off the result.
+ */
+export async function renderSpan(notes, from, to, { sampleRate = 44100, channels = 2 } = {}) {
+  const OAC = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+  if (!OAC) throw new Error('This browser cannot render audio offline.');
+  let start = from;
+  if (from > 0) {
+    for (const n of notes) {
+      if (n.t0 >= from) break;
+      if (n.t0 + n.dur + 0.5 > from) start = Math.min(start, n.t0);
+    }
+    start = Math.max(0, start - 1.0);
+  }
+  const skip = Math.round((from - start) * sampleRate);
+  const keep = Math.round((to - from) * sampleRate);
+  const c = new OAC(channels, skip + keep, sampleRate);
+  const out = { ctx: c, master: buildBus(c) };
+  for (const n of notes) {
+    if (n.t0 < start) continue;
+    if (n.t0 >= to) break;
+    voice(n.midi, n.t0 - start, n.dur, n.level, n.phraseStart, out);
+  }
+  const rendered = await c.startRendering();
+  return { buffer: rendered, offset: skip, length: Math.min(keep, rendered.length - skip) };
 }
