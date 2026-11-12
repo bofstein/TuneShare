@@ -51,7 +51,7 @@ import {
 } from './editor.js';
 import { formatAriaLabel, formatHdStatus, formatHint, formatReadout, formatSettingsSummary } from './ui-format.js';
 import { ERRORS, setToastContainer, showError, toast, warnFull } from './toast.js';
-import { copyLink, exportMusicXml, initDebugModal, initNewPopover, initShortcutSheet, initImport } from './dialogs.js';
+import { copyLink, exportMp3, exportMusicXml, initDebugModal, initNewPopover, initShortcutSheet, initImport } from './dialogs.js';
 import { initGestures } from './gestures.js';
 import { initKeyboard } from './keyboard.js';
 
@@ -225,6 +225,7 @@ initNewPopover({
 });
 $('copy').onclick = () => copyLink({ getTune: () => store.tune, onFlushUrl: () => store.flushUrl(), toast });
 $('exportXml').onclick = () => exportMusicXml(store.tune);
+$('exportMp3').onclick = () => exportMp3(store.tune, { toast });
 const importer = initImport({
   openBtn: $('importXml'), fileInput: $('importFile'), sheetEl: $('importSheet'), cardEl: card, toast,
   els: { title: $('importTitle'), replace: $('importReplace'), summary: $('importSummary'), details: $('importDetails'), ok: $('importOk'), cancel: $('importCancel') },
