@@ -1,9 +1,9 @@
 // MP3 export: render the tune offline with the live playback engine, then encode it with LAME (WASM).
 // Loaded on demand from the MP3 button, so neither this file nor the encoder costs anything at startup.
 import { tuneNotes, prepareRender, renderSpan } from './audio.js';
-import { createEncoder } from '../vendor/wasm-media-encoders/index.mjs';
+import { createEncoder } from '../lib/wasm-media-encoders/index.mjs';
 
-const WASM_URL = new URL('../vendor/wasm-media-encoders/mp3.wasm', import.meta.url).href;
+const WASM_URL = new URL('../lib/wasm-media-encoders/mp3.wasm', import.meta.url).href;
 
 /**
  * Ways to render, tried in order until one succeeds. A single pass is the most faithful; if the browser
